@@ -1,5 +1,5 @@
 import { AudioStatus, createAudioPlayer, setAudioModeAsync } from 'expo-audio';
-import { Track } from './library';
+import { markPlayed, Track } from './library';
 import { createStore } from './store';
 
 export type PlayerState = {
@@ -54,6 +54,7 @@ function load(index: number) {
   if (!track) return;
   playerStore.set((s) => ({ ...s, index, position: 0, duration: track.duration ?? 0 }));
   player.replace({ uri: track.uri });
+  markPlayed(track.key);
   player.play();
   const metadata = {
     title: track.title,

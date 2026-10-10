@@ -214,6 +214,7 @@ class YtDlpModule : Module() {
             ?: throw YtDlpException("Download finished but no media file was found")
           val thumb = File(thumbs, "$id.jpg")
           mapOf(
+            "size" to media.length().toDouble(),
             "uri" to publish(media, isVideo, baseName),
             "thumbnailPath" to if (thumb.exists()) "file://${thumb.absolutePath}" else null
           )
@@ -290,6 +291,25 @@ class YtDlpModule : Module() {
               val path = Uri.parse(uriString).path ?: return@map null
               val root = context.getExternalFilesDir(null)?.absolutePath ?: return@map null
               if (path.startsWith(root)) path.removePrefix("$root/") else null
+            }
+          } catch (e: Exception) {
+            null
+          }
+        }
+      }
+    }
+
+    // File size in bytes for each URI; null when it can't be determined.
+    AsyncFunction("mediaSizes") Coroutine { uris: List<String> ->
+      withContext(Dispatchers.IO) {
+        uris.map { uriString ->
+          try {
+            if (uriString.startsWith("content://")) {
+              context.contentResolver.query(
+                Uri.parse(uriString), arrayOf(MediaStore.MediaColumns.SIZE), null, null, null
+              )?.use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0).toDouble() else null }
+            } else {
+              File(Uri.parse(uriString).path ?: uriString).takeIf { it.exists() }?.length()?.toDouble()
             }
           } catch (e: Exception) {
             null

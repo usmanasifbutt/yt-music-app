@@ -1,7 +1,7 @@
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Track } from '../library';
+import { markPlayed, Track } from '../library';
 import { pausePlayback } from '../player';
 import { colors, common } from './theme';
 
@@ -18,6 +18,7 @@ function VideoScreen({ track, onClose }: { track: Track; onClose: () => void }) 
   const insets = useSafeAreaInsets();
   const player = useVideoPlayer(track.uri, (p) => {
     pausePlayback(); // don't play music over the video
+    markPlayed(track.key);
     p.play();
   });
 

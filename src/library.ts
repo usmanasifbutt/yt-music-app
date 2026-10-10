@@ -17,6 +17,10 @@ export type Track = {
   uri: string;
   thumbnailPath: string | null;
   addedAt: number;
+  /** File size in bytes, null until known. */
+  size: number | null;
+  playCount: number;
+  lastPlayedAt: number | null;
 };
 
 export const db = openDatabaseSync('library.db');
@@ -49,7 +53,34 @@ db.execSync(`
     position INTEGER NOT NULL,
     PRIMARY KEY (playlist_id, track_key)
   );
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY NOT NULL,
+    value TEXT NOT NULL
+  );
 `);
+
+// Columns added after the first release; ALTER TABLE has no IF NOT EXISTS.
+const trackColumns = new Set(db.getAllSync<{ name: string }>('PRAGMA table_info(tracks)').map((c) => c.name));
+for (const [name, type] of [
+  ['size', 'INTEGER'],
+  ['play_count', 'INTEGER NOT NULL DEFAULT 0'],
+  ['last_played_at', 'INTEGER'],
+]) {
+  if (!trackColumns.has(name)) db.execSync(`ALTER TABLE tracks ADD COLUMN ${name} ${type}`);
+}
+
+export function getSetting<T>(key: string, fallback: T): T {
+  const row = db.getFirstSync<{ value: string }>('SELECT value FROM settings WHERE key = ?', [key]);
+  try {
+    return row ? (JSON.parse(row.value) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function setSetting(key: string, value: unknown) {
+  db.runSync('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, JSON.stringify(value)]);
+}
 
 type TrackRow = {
   key: string;
@@ -62,9 +93,15 @@ type TrackRow = {
   uri: string;
   thumbnail_path: string | null;
   added_at: number;
+  size: number | null;
+  play_count: number;
+  last_played_at: number | null;
 };
 
 const fromRow = (r: TrackRow): Track => ({
+  size: r.size,
+  playCount: r.play_count,
+  lastPlayedAt: r.last_played_at,
   key: r.key,
   videoId: r.video_id,
   kind: r.kind,
@@ -80,9 +117,24 @@ const fromRow = (r: TrackRow): Track => ({
 function insertTrack(t: Track) {
   db.runSync(
     `INSERT OR REPLACE INTO tracks
-       (key, video_id, kind, height, title, artist, duration, uri, thumbnail_path, added_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [t.key, t.videoId, t.kind, t.height, t.title, t.artist, t.duration, t.uri, t.thumbnailPath, t.addedAt]
+       (key, video_id, kind, height, title, artist, duration, uri, thumbnail_path, added_at,
+        size, play_count, last_played_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      t.key,
+      t.videoId,
+      t.kind,
+      t.height,
+      t.title,
+      t.artist,
+      t.duration,
+      t.uri,
+      t.thumbnailPath,
+      t.addedAt,
+      t.size ?? null,
+      t.playCount ?? 0,
+      t.lastPlayedAt ?? null,
+    ]
   );
 }
 
@@ -111,6 +163,9 @@ function migrateLegacyIndex() {
                 uri: t.audioPath,
                 thumbnailPath: t.thumbnailPath,
                 addedAt: t.addedAt,
+                size: null,
+                playCount: 0,
+                lastPlayedAt: null,
               }
         );
       }
@@ -132,13 +187,36 @@ export async function loadLibrary() {
       for (const t of missing) db.runSync('DELETE FROM tracks WHERE key = ?', [t.key]);
     });
   }
-  libraryStore.set(tracks.filter((_, i) => present[i]));
+  const kept = tracks.filter((_, i) => present[i]);
+
+  // Sizes weren't recorded before v1.2; look them up once and store them.
+  const unsized = kept.filter((t) => t.size == null);
+  if (unsized.length) {
+    const sizes = await YtDlp.mediaSizes(unsized.map((t) => t.uri));
+    db.withTransactionSync(() => {
+      unsized.forEach((t, i) => {
+        t.size = sizes[i];
+        if (sizes[i] != null) db.runSync('UPDATE tracks SET size = ? WHERE key = ?', [sizes[i], t.key]);
+      });
+    });
+  }
+
+  libraryStore.set(kept);
   return missing.map((t) => t.key);
 }
 
 export function addTrack(track: Track) {
   insertTrack(track);
   libraryStore.set((prev) => [track, ...prev.filter((t) => t.key !== track.key)]);
+}
+
+/** Records a play for "Most played", "Recently played" and storage clean-up. */
+export function markPlayed(key: string) {
+  const now = Date.now();
+  db.runSync('UPDATE tracks SET play_count = play_count + 1, last_played_at = ? WHERE key = ?', [now, key]);
+  libraryStore.set((prev) =>
+    prev.map((t) => (t.key === key ? { ...t, playCount: t.playCount + 1, lastPlayedAt: now } : t))
+  );
 }
 
 /**

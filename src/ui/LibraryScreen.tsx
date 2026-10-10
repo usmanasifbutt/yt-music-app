@@ -1,13 +1,27 @@
-import { useState } from 'react';
-import { Alert, BackHandler, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Alert, BackHandler, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import YtDlp from '../../modules/yt-dlp';
 import { cancelDownload, downloadsStore, nativeErrorMessage, retryDownload } from '../downloads';
 import { libraryStore, Track } from '../library';
+import {
+  applyView,
+  FILTER_OPTIONS,
+  FilterKey,
+  formatBytes,
+  loadSort,
+  setSort,
+  SORT_OPTIONS,
+  sortStore,
+  STALE_DAYS,
+  staleTracks,
+  totalSize,
+} from '../libraryView';
 import { playerStore, playList } from '../player';
+import { playlistsStore } from '../playlists';
 import { useStore } from '../store';
 import { AddToPlaylistSheet } from './AddToPlaylistSheet';
 import { PlaylistDetail, PlaylistsList } from './PlaylistScreens';
+import { Sheet, SheetItem } from './Sheet';
 import { colors, common } from './theme';
 import { confirmDeleteTracks, TrackMenu } from './TrackMenu';
 import { TrackRow } from './TrackRow';
@@ -54,13 +68,27 @@ export function LibraryScreen() {
 }
 
 function TrackList({ kind }: { kind: 'audio' | 'video' }) {
-  const tracks = useStore(libraryStore).filter((t) => t.kind === kind);
+  const library = useStore(libraryStore);
+  const playlists = useStore(playlistsStore);
+  const sort = useStore(sortStore);
   const { queue, index } = useStore(playerStore);
   const playingKey = queue[index]?.key;
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<FilterKey>('all');
+  const [sortOpen, setSortOpen] = useState(false);
+  const [storageOpen, setStorageOpen] = useState(false);
   const [selection, setSelection] = useState<Set<string> | null>(null);
   const [menuTrack, setMenuTrack] = useState<Track | null>(null);
   const [addKeys, setAddKeys] = useState<string[] | null>(null);
   const [video, setVideo] = useState<Track | null>(null);
+
+  useEffect(loadSort, []);
+
+  const all = useMemo(() => library.filter((t) => t.kind === kind), [library, kind]);
+  const shown = useMemo(
+    () => applyView(all, { sort, filter, query }, playlists),
+    [all, sort, filter, query, playlists]
+  );
 
   useEffect(() => {
     if (!selection) return;
@@ -83,10 +111,12 @@ function TrackList({ kind }: { kind: 'audio' | 'video' }) {
   function open(track: Track, i: number) {
     if (selection) return toggle(track.key);
     if (track.kind === 'video') setVideo(track);
-    else playList(tracks, i);
+    else playList(shown, i); // the queue follows the current sort/filter
   }
 
-  const selected = tracks.filter((t) => selection?.has(t.key));
+  const selected = shown.filter((t) => selection?.has(t.key));
+  const sortLabel = SORT_OPTIONS.find((o) => o.key === sort)?.label;
+  const noun = kind === 'audio' ? 'songs' : 'videos';
 
   return (
     <>
@@ -98,8 +128,8 @@ function TrackList({ kind }: { kind: 'audio' | 'video' }) {
           <Text style={styles.selectionCount}>{selection.size} selected</Text>
           <Pressable
             style={styles.pill}
-            onPress={() => setSelection(selection.size === tracks.length ? null : new Set(tracks.map((t) => t.key)))}>
-            <Text style={styles.pillText}>{selection.size === tracks.length ? 'None' : 'All'}</Text>
+            onPress={() => setSelection(selection.size === shown.length ? null : new Set(shown.map((t) => t.key)))}>
+            <Text style={styles.pillText}>{selection.size === shown.length ? 'None' : 'All'}</Text>
           </Pressable>
           <Pressable style={styles.pill} onPress={() => setAddKeys([...selection])}>
             <Text style={styles.pillText}>+ Playlist</Text>
@@ -108,16 +138,60 @@ function TrackList({ kind }: { kind: 'audio' | 'video' }) {
             <Text style={[styles.pillText, { color: colors.accent }]}>Delete</Text>
           </Pressable>
         </View>
-      ) : null}
+      ) : (
+        all.length > 0 && (
+          <View>
+            <View style={styles.toolbar}>
+              <TextInput
+                style={styles.search}
+                placeholder={`Search ${noun}`}
+                placeholderTextColor={colors.muted}
+                value={query}
+                onChangeText={setQuery}
+                autoCorrect={false}
+                returnKeyType="search"
+              />
+              <Pressable
+                style={[styles.pill, filter === 'recent' && { opacity: 0.5 }]}
+                disabled={filter === 'recent'}
+                onPress={() => setSortOpen(true)}>
+                <Text style={styles.pillText}>⇅ {filter === 'recent' ? 'Last played' : sortLabel}</Text>
+              </Pressable>
+            </View>
+            <View style={styles.filters}>
+              {FILTER_OPTIONS.map((f) => (
+                <Pressable
+                  key={f.key}
+                  onPress={() => setFilter(f.key)}
+                  style={[styles.filterChip, filter === f.key && styles.filterChipActive]}>
+                  <Text style={[styles.filterText, filter === f.key && styles.filterTextActive]}>{f.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        )
+      )}
       <FlatList
-        data={tracks}
+        data={shown}
         keyExtractor={(t) => t.key}
-        ListHeaderComponent={selection ? null : <LibraryHeader tracks={tracks} kind={kind} />}
+        keyboardShouldPersistTaps="handled"
+        ListHeaderComponent={
+          selection ? null : (
+            <LibraryHeader
+              kind={kind}
+              shown={shown}
+              total={all.length}
+              onStorage={() => setStorageOpen(true)}
+            />
+          )
+        }
         ListEmptyComponent={
           <Text style={common.empty}>
-            {kind === 'audio'
-              ? 'No songs yet. Find something in Search and tap ⬇.'
-              : 'No videos yet. In Search, tap ⬇ and pick a video quality.'}
+            {all.length === 0
+              ? kind === 'audio'
+                ? 'No songs yet. Find something in Search and tap ⬇.'
+                : 'No videos yet. In Search, tap ⬇ and pick a video quality.'
+              : `No ${noun} match.`}
           </Text>
         }
         renderItem={({ item, index: i }) => (
@@ -131,6 +205,21 @@ function TrackList({ kind }: { kind: 'audio' | 'video' }) {
           />
         )}
       />
+
+      <Sheet visible={sortOpen} title="Sort by" onClose={() => setSortOpen(false)}>
+        {SORT_OPTIONS.map((o) => (
+          <SheetItem
+            key={o.key}
+            icon={o.key === sort ? '✓' : ''}
+            label={o.label}
+            onPress={() => {
+              setSort(o.key);
+              setSortOpen(false);
+            }}
+          />
+        ))}
+      </Sheet>
+      <StorageSheet visible={storageOpen} onClose={() => setStorageOpen(false)} />
       <TrackMenu
         track={menuTrack}
         onClose={() => setMenuTrack(null)}
@@ -148,9 +237,49 @@ function TrackList({ kind }: { kind: 'audio' | 'video' }) {
   );
 }
 
-function LibraryHeader({ tracks, kind }: { tracks: Track[]; kind: 'audio' | 'video' }) {
+function StorageSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const library = useStore(libraryStore);
+  const audio = library.filter((t) => t.kind === 'audio');
+  const videos = library.filter((t) => t.kind === 'video');
+  const stale = staleTracks(library);
+
+  return (
+    <Sheet
+      visible={visible}
+      title={`Storage · ${formatBytes(totalSize(library))}`}
+      subtitle="Downloads in Music/YT Music and Movies/YT Music"
+      onClose={onClose}>
+      <SheetItem icon="♫" label={`${audio.length} songs`} detail={formatBytes(totalSize(audio))} onPress={() => {}} />
+      <SheetItem icon="▶" label={`${videos.length} videos`} detail={formatBytes(totalSize(videos))} onPress={() => {}} />
+      <SheetItem
+        icon="🗑"
+        destructive
+        disabled={!stale.length}
+        label={stale.length ? `Delete ${stale.length} not played in ${STALE_DAYS}+ days` : `Nothing unplayed for ${STALE_DAYS}+ days`}
+        detail={stale.length ? formatBytes(totalSize(stale)) : undefined}
+        onPress={() => {
+          onClose();
+          confirmDeleteTracks(stale);
+        }}
+      />
+    </Sheet>
+  );
+}
+
+function LibraryHeader({
+  kind,
+  shown,
+  total,
+  onStorage,
+}: {
+  kind: 'audio' | 'video';
+  shown: Track[];
+  total: number;
+  onStorage: () => void;
+}) {
   const downloads = Object.values(useStore(downloadsStore)).filter((d) => d.kind === kind);
   const [updating, setUpdating] = useState(false);
+  const noun = kind === 'audio' ? (total === 1 ? 'song' : 'songs') : total === 1 ? 'video' : 'videos';
 
   async function updateEngine() {
     setUpdating(true);
@@ -171,16 +300,19 @@ function LibraryHeader({ tracks, kind }: { tracks: Track[]; kind: 'audio' | 'vid
   return (
     <View>
       <View style={styles.header}>
-        <Text style={styles.count}>
-          {tracks.length} {kind === 'audio' ? (tracks.length === 1 ? 'song' : 'songs') : tracks.length === 1 ? 'video' : 'videos'}
-        </Text>
+        <Pressable onPress={onStorage} hitSlop={8}>
+          <Text style={styles.count}>
+            {shown.length === total ? `${total} ${noun}` : `${shown.length} of ${total} ${noun}`} ·{' '}
+            {formatBytes(totalSize(shown))} ›
+          </Text>
+        </Pressable>
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Pressable style={styles.pill} onPress={updateEngine} disabled={updating}>
             <Text style={styles.pillText}>{updating ? 'Updating…' : 'Update engine'}</Text>
           </Pressable>
-          {kind === 'audio' && tracks.length > 0 && (
-            <Pressable style={[styles.pill, { backgroundColor: colors.accent }]} onPress={() => playList(tracks, 0)}>
-              <Text style={[styles.pillText, { color: '#fff' }]}>▶ Play all</Text>
+          {kind === 'audio' && shown.length > 0 && (
+            <Pressable style={[styles.pill, { backgroundColor: colors.accent }]} onPress={() => playList(shown, 0)}>
+              <Text style={[styles.pillText, { color: '#fff' }]}>▶ Play</Text>
             </Pressable>
           )}
         </View>
@@ -229,6 +361,27 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.text },
   chipText: { color: colors.text, fontSize: 13 },
   chipTextActive: { color: colors.bg, fontWeight: '700' },
+  toolbar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingTop: 4 },
+  search: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    color: colors.text,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    fontSize: 14,
+  },
+  filters: { flexDirection: 'row', gap: 6, paddingHorizontal: 16, paddingTop: 8 },
+  filterChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  filterChipActive: { borderColor: colors.accent, backgroundColor: 'rgba(255,78,69,0.15)' },
+  filterText: { color: colors.muted, fontSize: 12 },
+  filterTextActive: { color: colors.text, fontWeight: '600' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -236,7 +389,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  count: { color: colors.muted, fontSize: 14 },
+  count: { color: colors.muted, fontSize: 13 },
   pill: {
     backgroundColor: colors.surface,
     paddingHorizontal: 12,

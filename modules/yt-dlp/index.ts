@@ -1,7 +1,7 @@
 import { NativeModule, requireNativeModule } from 'expo';
 
 export type ProgressEvent = { id: string; progress: number; eta: number };
-export type DownloadResult = { uri: string; thumbnailPath: string | null };
+export type DownloadResult = { uri: string; thumbnailPath: string | null; size: number };
 export type MediaKind = 'audio' | 'video';
 
 export type SearchResult = {
@@ -35,6 +35,7 @@ declare class YtDlpNative extends NativeModule<Events> {
   exists(uri: string): Promise<boolean>;
   writePlaylistFile(existingUri: string | null, name: string, content: string): Promise<string>;
   mediaPaths(uris: string[]): Promise<(string | null)[]>;
+  mediaSizes(uris: string[]): Promise<(number | null)[]>;
 }
 
 const YtDlp = requireNativeModule<YtDlpNative>('YtDlp');
