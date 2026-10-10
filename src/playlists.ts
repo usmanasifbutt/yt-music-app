@@ -132,9 +132,9 @@ export function tracksMissing(keys: string[]) {
   }
 }
 
-const PLAYLIST_DIR = 'Music/YT Music Offline';
+const PLAYLIST_DIR = 'Music/YT Music';
 
-// Path of a media file as seen from the .m3u, which lives in Music/YT Music Offline/.
+// Path of a media file as seen from the .m3u, which lives in Music/YT Music/.
 function relativeToPlaylist(mediaPath: string) {
   return mediaPath.startsWith(`${PLAYLIST_DIR}/`)
     ? mediaPath.slice(PLAYLIST_DIR.length + 1)
@@ -144,7 +144,7 @@ function relativeToPlaylist(mediaPath: string) {
 const pendingWrites = new Map<number, Promise<void>>();
 
 /**
- * Mirrors the playlist to Music/YT Music Offline/<name>.m3u so other players (Files,
+ * Mirrors the playlist to Music/YT Music/<name>.m3u so other players (Files,
  * VLC, Poweramp…) see the same playlist. Writes for one playlist are serialized.
  */
 function writeM3u(id: number): Promise<void> {

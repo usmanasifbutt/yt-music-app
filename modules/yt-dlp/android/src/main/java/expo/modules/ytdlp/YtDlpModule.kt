@@ -21,7 +21,7 @@ import java.io.File
 class YtDlpException(message: String, cause: Throwable? = null) :
   CodedException("ERR_YTDLP", message, cause)
 
-private const val PUBLIC_FOLDER = "YT Music Offline"
+private const val PUBLIC_FOLDER = "YT Music"
 
 class YtDlpModule : Module() {
   private val context: Context
@@ -233,7 +233,7 @@ class YtDlpModule : Module() {
       YoutubeDL.getInstance().destroyProcessById(key)
     }
 
-    // Writes (or overwrites) Music/YT Music Offline/<name>.m3u so other players see the
+    // Writes (or overwrites) Music/YT Music/<name>.m3u so other players see the
     // playlist. Returns the file's URI; pass it back as existingUri on later updates.
     AsyncFunction("writePlaylistFile") Coroutine { existingUri: String?, name: String, content: String ->
       withContext(Dispatchers.IO) {
@@ -244,7 +244,12 @@ class YtDlpModule : Module() {
           existingUri?.takeIf { it.startsWith("content://") }?.let { uriString ->
             try {
               val uri = Uri.parse(uriString)
-              resolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.DISPLAY_NAME, fileName) }, null, null)
+              // Also (re)sets the folder, which moves files written under an older folder name.
+              val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/$PUBLIC_FOLDER")
+              }
+              resolver.update(uri, values, null, null)
               resolver.openOutputStream(uri, "wt")!!.use { it.write(bytes) }
               return@withContext uriString
             } catch (e: Exception) {
@@ -271,7 +276,7 @@ class YtDlpModule : Module() {
     }
 
     // Storage path of each media URI relative to shared storage root, e.g.
-    // "Music/YT Music Offline/Song - Artist.m4a"; null when unknown (private files).
+    // "Music/YT Music/Song - Artist.m4a"; null when unknown (private files).
     AsyncFunction("mediaPaths") Coroutine { uris: List<String> ->
       withContext(Dispatchers.IO) {
         uris.map { uriString ->
