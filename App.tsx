@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -14,6 +15,15 @@ import { SearchScreen } from './src/ui/SearchScreen';
 import { colors } from './src/ui/theme';
 
 type Tab = 'search' | 'library';
+
+// e.g. "v1.1.0 (2)", plus "Beta" for test builds, so you can tell which build is installed.
+const APP_VERSION = [
+  `v${Constants.expoConfig?.version ?? '?'}`,
+  `(${Constants.expoConfig?.android?.versionCode ?? '?'})`,
+  Constants.expoConfig?.name?.endsWith('Beta') ? 'Beta' : '',
+]
+  .filter(Boolean)
+  .join(' ');
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('search');
@@ -46,7 +56,10 @@ export default function App() {
     <SafeAreaProvider>
       <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
         <StatusBar style="light" />
-        <Text style={styles.heading}>{tab === 'search' ? 'Search' : 'Library'}</Text>
+        <View style={styles.headingRow}>
+          <Text style={styles.heading}>{tab === 'search' ? 'Search' : 'Library'}</Text>
+          <Text style={styles.version}>{APP_VERSION}</Text>
+        </View>
         {engine !== 'ready' && (
           <View style={styles.banner}>
             {engine === 'loading' || engine === 'updating' ? (
@@ -81,14 +94,16 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  heading: {
-    color: colors.text,
-    fontSize: 28,
-    fontWeight: '800',
+  headingRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 4,
   },
+  heading: { color: colors.text, fontSize: 28, fontWeight: '800' },
+  version: { color: colors.muted, fontSize: 12 },
   banner: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingHorizontal: 16, paddingVertical: 6 },
   bannerText: { color: colors.muted, fontSize: 13 },
   tabs: {

@@ -6,6 +6,7 @@
     "expo": "~57.0.27",
     "expo-audio": "~57.0.5",
     "expo-build-properties": "~57.0.22",
+    "expo-constants": "~57.0.21",
     "expo-dev-client": "~57.0.19",
     "expo-file-system": "~57.0.7",
     "expo-image": "~57.0.5",
@@ -24,7 +25,8 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "bump": "node scripts/bump-version.mjs"
   },
   "private": true
 }

@@ -42,6 +42,38 @@ npx expo run:android
 
 For a release APK: `npx expo prebuild -p android`, then `cd android && ./gradlew assembleRelease`.
 
+## Versions and rollback
+
+Each release has a version in `app.json` (`version`, shown in the app's top-right corner) and an
+Android `versionCode`, which must go up for a build to install as an update. Each release is also tagged
+in git (`v1.0.0`, `v1.1.0`, …).
+
+**Release a new version**
+
+```bash
+npm run bump -- minor        # or patch / major; also increments versionCode
+git commit -am "Release v1.2.0"
+git tag v1.2.0
+git push --follow-tags
+eas build -p android --profile preview
+```
+
+**Test before replacing your app.** The `beta` profile builds **YT Music Beta**, which has its own package ID,
+so it installs *next to* the real app with its own empty library. Use it to try a risky build; if it works,
+build `preview` for real.
+
+```bash
+eas build -p android --profile beta
+```
+
+**Roll back.** Every build stays on expo.dev → Projects → yt-music-app → Builds, where you can download any
+older APK. Android blocks installing a lower `versionCode` over a higher one, so either:
+
+- **Rebuild the old code as a new version (keeps your library):** `git checkout v1.0.0`, set `versionCode` in
+  `app.json` above the broken build's, `eas build -p android --profile preview`, then `git checkout master`.
+- **Uninstall and install the old APK (quick, but loses the in-app library and playlists).** Your downloaded
+  files stay in `Music/YT Music` and `Movies/YT Music`.
+
 ## Notes
 
 - The first launch takes a few seconds to unpack Python and ffmpeg ("Preparing download engine…").

@@ -12,6 +12,10 @@
     "preview": {
       "distribution": "internal",
       "android": { "buildType": "apk" }
+    },
+    "beta": {
+      "extends": "preview",
+      "env": { "APP_VARIANT": "beta" }
     }
   }
 }
