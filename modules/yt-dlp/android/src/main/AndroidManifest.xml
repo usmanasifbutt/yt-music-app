@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:tools="http://schemas.android.com/tools">
+  <uses-permission android:name="android.permission.INTERNET" />
+  <!-- youtubedl-android runs bundled python/ffmpeg binaries from the native lib dir -->
+  <application
+    android:extractNativeLibs="true"
+    tools:replace="android:extractNativeLibs" />
+</manifest>
