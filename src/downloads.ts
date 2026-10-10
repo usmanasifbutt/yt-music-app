@@ -1,5 +1,6 @@
 import YtDlp, { downloadKey, MediaKind, SearchResult } from '../modules/yt-dlp';
 import { addTrack } from './library';
+import { trackAdded } from './playlists';
 import { createStore } from './store';
 
 export type DownloadState = {
@@ -66,6 +67,7 @@ async function run({ key, item, kind, height }: DownloadState) {
       thumbnailPath,
       addedAt: Date.now(),
     });
+    trackAdded(key);
     remove(key);
   } catch (e: any) {
     const message = nativeErrorMessage(e);

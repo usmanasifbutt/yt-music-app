@@ -1,4 +1,5 @@
 import { File, Paths } from 'expo-file-system';
+import { openDatabaseSync } from 'expo-sqlite';
 import YtDlp, { MediaKind } from '../modules/yt-dlp';
 import { createStore } from './store';
 
@@ -18,50 +19,132 @@ export type Track = {
   addedAt: number;
 };
 
-const indexFile = new File(Paths.document, 'library.json');
+export const db = openDatabaseSync('library.db');
+
+db.execSync(`
+  PRAGMA journal_mode = WAL;
+  CREATE TABLE IF NOT EXISTS tracks (
+    key TEXT PRIMARY KEY NOT NULL,
+    video_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    height INTEGER NOT NULL DEFAULT 0,
+    title TEXT NOT NULL,
+    artist TEXT NOT NULL,
+    duration REAL,
+    uri TEXT NOT NULL,
+    thumbnail_path TEXT,
+    added_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS playlists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    m3u_uri TEXT
+  );
+  -- track_key may point at a track that is still downloading (e.g. an imported
+  -- YouTube playlist), so there is deliberately no foreign key to tracks.
+  CREATE TABLE IF NOT EXISTS playlist_tracks (
+    playlist_id INTEGER NOT NULL,
+    track_key TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    PRIMARY KEY (playlist_id, track_key)
+  );
+`);
+
+type TrackRow = {
+  key: string;
+  video_id: string;
+  kind: MediaKind;
+  height: number;
+  title: string;
+  artist: string;
+  duration: number | null;
+  uri: string;
+  thumbnail_path: string | null;
+  added_at: number;
+};
+
+const fromRow = (r: TrackRow): Track => ({
+  key: r.key,
+  videoId: r.video_id,
+  kind: r.kind,
+  height: r.height,
+  title: r.title,
+  artist: r.artist,
+  duration: r.duration,
+  uri: r.uri,
+  thumbnailPath: r.thumbnail_path,
+  addedAt: r.added_at,
+});
+
+function insertTrack(t: Track) {
+  db.runSync(
+    `INSERT OR REPLACE INTO tracks
+       (key, video_id, kind, height, title, artist, duration, uri, thumbnail_path, added_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [t.key, t.videoId, t.kind, t.height, t.title, t.artist, t.duration, t.uri, t.thumbnailPath, t.addedAt]
+  );
+}
 
 export const libraryStore = createStore<Track[]>([]);
 
-// Entries saved by the first version of the app (audio only, private storage).
-function upgrade(t: any): Track {
-  if (t.key) return t;
-  return {
-    key: `${t.id}:audio`,
-    videoId: t.id,
-    kind: 'audio',
-    height: 0,
-    title: t.title,
-    artist: t.artist,
-    duration: t.duration,
-    uri: t.audioPath,
-    thumbnailPath: t.thumbnailPath,
-    addedAt: t.addedAt,
-  };
-}
+// The first versions of the app kept the library in library.json.
+const legacyIndex = new File(Paths.document, 'library.json');
 
-export async function loadLibrary() {
-  if (!indexFile.exists) return;
+function migrateLegacyIndex() {
+  if (!legacyIndex.exists) return;
   try {
-    const tracks: Track[] = JSON.parse(await indexFile.text()).map(upgrade);
-    // Drop entries whose file was deleted outside the app (e.g. from a file manager).
-    const present = await Promise.all(tracks.map((t) => YtDlp.exists(t.uri)));
-    libraryStore.set(tracks.filter((_, i) => present[i]));
-    if (present.includes(false)) persist();
+    const old: any[] = JSON.parse(legacyIndex.textSync());
+    db.withTransactionSync(() => {
+      for (const t of old) {
+        insertTrack(
+          t.key
+            ? t
+            : {
+                key: `${t.id}:audio`,
+                videoId: t.id,
+                kind: 'audio',
+                height: 0,
+                title: t.title,
+                artist: t.artist,
+                duration: t.duration,
+                uri: t.audioPath,
+                thumbnailPath: t.thumbnailPath,
+                addedAt: t.addedAt,
+              }
+        );
+      }
+    });
+    legacyIndex.delete();
   } catch {
-    libraryStore.set([]);
+    // Leave the file in place; nothing is lost and we can retry next launch.
   }
 }
 
-function persist() {
-  indexFile.write(JSON.stringify(libraryStore.get()));
+export async function loadLibrary() {
+  migrateLegacyIndex();
+  const tracks = db.getAllSync<TrackRow>('SELECT * FROM tracks ORDER BY added_at DESC').map(fromRow);
+  // Drop entries whose file was deleted outside the app (e.g. from a file manager).
+  const present = await Promise.all(tracks.map((t) => YtDlp.exists(t.uri)));
+  const missing = tracks.filter((_, i) => !present[i]);
+  if (missing.length) {
+    db.withTransactionSync(() => {
+      for (const t of missing) db.runSync('DELETE FROM tracks WHERE key = ?', [t.key]);
+    });
+  }
+  libraryStore.set(tracks.filter((_, i) => present[i]));
+  return missing.map((t) => t.key);
 }
 
 export function addTrack(track: Track) {
+  insertTrack(track);
   libraryStore.set((prev) => [track, ...prev.filter((t) => t.key !== track.key)]);
-  persist();
 }
 
-/** Deletes the file and forgets the track. Returns false if Android refused to delete the file. */
+/**
+ * Deletes the file and the track row. Returns false if Android refused to delete the
+ * file. Playlist membership is cleaned up by deleteTrackEverywhere() in playlists.ts.
+ */
 export async function removeTrack(key: string) {
   const track = libraryStore.get().find((t) => t.key === key);
   if (!track) return true;
@@ -74,8 +157,8 @@ export async function removeTrack(key: string) {
     const thumb = new File(track.thumbnailPath);
     if (thumb.exists) thumb.delete();
   }
+  db.runSync('DELETE FROM tracks WHERE key = ?', [key]);
   libraryStore.set((prev) => prev.filter((t) => t.key !== key));
-  persist();
   return deleted;
 }
 

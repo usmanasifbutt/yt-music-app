@@ -33,6 +33,8 @@ declare class YtDlpNative extends NativeModule<Events> {
   cancel(key: string): boolean;
   deleteMedia(uri: string): Promise<boolean>;
   exists(uri: string): Promise<boolean>;
+  writePlaylistFile(existingUri: string | null, name: string, content: string): Promise<string>;
+  mediaPaths(uris: string[]): Promise<(string | null)[]>;
 }
 
 const YtDlp = requireNativeModule<YtDlpNative>('YtDlp');
@@ -62,13 +64,24 @@ function toResult(e: any): SearchResult {
 
 const isVideoId = (id: unknown) => typeof id === 'string' && id.length === 11;
 
+export type SearchResponse = {
+  results: SearchResult[];
+  /** Set when the query was a YouTube playlist link. */
+  playlist: { id: string; title: string } | null;
+};
+
 /** Searches YouTube. Also accepts a pasted video or playlist link. */
-export async function search(query: string, limit = 25): Promise<SearchResult[]> {
+export async function search(query: string, limit = 25): Promise<SearchResponse> {
   const isUrl = /^https?:\/\//i.test(query);
   const json = JSON.parse(await YtDlp.search(query, isUrl ? 200 : limit));
   // A single-video link returns the video itself rather than a list of entries.
   const entries: any[] = json.entries ?? (json.id ? [json] : []);
-  return entries.filter((e) => isVideoId(e?.id)).map(toResult); // drop channels/playlists
+  const results = entries.filter((e) => isVideoId(e?.id)).map(toResult); // drop channels/playlists
+  const playlist =
+    isUrl && json._type === 'playlist' && json.entries
+      ? { id: String(json.id), title: json.title ?? 'YouTube playlist' }
+      : null;
+  return { results, playlist };
 }
 
 const sizeOf = (f: any): number => f?.filesize ?? f?.filesize_approx ?? 0;

@@ -6,6 +6,7 @@ import YtDlp from './modules/yt-dlp';
 import { downloadsStore, nativeErrorMessage } from './src/downloads';
 import { loadLibrary, markUpdated, shouldAutoUpdate } from './src/library';
 import { setupPlayer } from './src/player';
+import { loadPlaylists, tracksMissing } from './src/playlists';
 import { useStore } from './src/store';
 import { LibraryScreen } from './src/ui/LibraryScreen';
 import { MiniPlayer } from './src/ui/Player';
@@ -20,7 +21,8 @@ export default function App() {
   const activeDownloads = Object.keys(useStore(downloadsStore)).length;
 
   useEffect(() => {
-    loadLibrary();
+    loadPlaylists();
+    loadLibrary().then(tracksMissing);
     setupPlayer();
     // First launch unpacks python + ffmpeg; do it up front so the first search is fast.
     // The yt-dlp bundled in the APK goes stale as YouTube changes, so refresh it daily.

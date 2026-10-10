@@ -1,17 +1,20 @@
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
+  ToastAndroid,
   View,
 } from 'react-native';
-import { search, SearchResult } from '../../modules/yt-dlp';
-import { downloadsStore, nativeErrorMessage } from '../downloads';
+import { downloadKey, search, SearchResponse, SearchResult } from '../../modules/yt-dlp';
+import { downloadsStore, enqueueDownload, nativeErrorMessage } from '../downloads';
 import { libraryStore } from '../library';
+import { createPlaylist } from '../playlists';
 import { useStore } from '../store';
 import { DownloadSheet } from './DownloadSheet';
 import { colors, common, formatTime } from './theme';
@@ -22,6 +25,32 @@ export function SearchScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<SearchResult | null>(null);
+  const [playlist, setPlaylist] = useState<SearchResponse['playlist']>(null);
+
+  function importPlaylist() {
+    if (!playlist || !results.length) return;
+    const saved = new Set(libraryStore.get().map((t) => t.key));
+    const missing = results.filter((r) => !saved.has(downloadKey(r.id, 'audio')));
+    Alert.alert(
+      'Save as playlist?',
+      `Creates "${playlist.title}" with ${results.length} songs` +
+        (missing.length ? ` and downloads ${missing.length} as audio.` : '.'),
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Save',
+          onPress: () => {
+            createPlaylist(
+              playlist.title,
+              results.map((r) => downloadKey(r.id, 'audio'))
+            );
+            missing.forEach((r) => enqueueDownload(r, 'audio'));
+            ToastAndroid.show(`Saving "${playlist.title}" — see Library → Playlists`, ToastAndroid.LONG);
+          },
+        },
+      ]
+    );
+  }
   const downloads = Object.values(useStore(downloadsStore));
   const library = useStore(libraryStore);
 
@@ -31,7 +60,9 @@ export function SearchScreen() {
     setLoading(true);
     setError(null);
     try {
-      setResults(await search(q));
+      const response = await search(q);
+      setResults(response.results);
+      setPlaylist(response.playlist);
     } catch (e: any) {
       setError(nativeErrorMessage(e));
     } finally {
@@ -54,6 +85,19 @@ export function SearchScreen() {
         />
       </View>
 
+      {!loading && playlist && results.length > 0 && (
+        <View style={styles.playlistBanner}>
+          <View style={{ flex: 1 }}>
+            <Text style={common.title} numberOfLines={1}>
+              {playlist.title}
+            </Text>
+            <Text style={common.subtitle}>YouTube playlist · {results.length} videos</Text>
+          </View>
+          <Pressable style={styles.saveButton} onPress={importPlaylist}>
+            <Text style={styles.saveText}>Save as playlist</Text>
+          </Pressable>
+        </View>
+      )}
       {loading && <ActivityIndicator color={colors.accent} style={{ marginTop: 32 }} />}
       {error && <Text style={[common.empty, { color: colors.accent }]}>{error}</Text>}
 
@@ -115,5 +159,17 @@ const styles = StyleSheet.create({
   // YouTube thumbnails are 16:9.
   thumb: { width: 96, height: 54, borderRadius: 6, backgroundColor: colors.surfaceHigh },
   badge: { color: colors.success, fontSize: 12, marginTop: 3 },
+  playlistBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: 16,
+    marginBottom: 4,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+  },
+  saveButton: { backgroundColor: colors.accent, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8 },
+  saveText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   progress: { color: colors.text, fontSize: 13, fontVariant: ['tabular-nums'] },
 });

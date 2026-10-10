@@ -81,12 +81,33 @@ function shuffled(tracks: Track[], first: Track) {
   return [first, ...rest];
 }
 
-/** Plays `tracks` starting at `startIndex`, respecting the shuffle setting. */
-export function playList(tracks: Track[], startIndex: number) {
-  const { shuffle } = playerStore.get();
-  const queue = shuffle ? shuffled(tracks, tracks[startIndex]) : tracks;
-  playerStore.set((s) => ({ ...s, queue }));
-  load(shuffle ? 0 : startIndex);
+/**
+ * Plays `tracks` starting at `startIndex`, respecting the shuffle setting unless
+ * `options.shuffle` overrides it (a playlist's Shuffle button turns shuffle on).
+ */
+export function playList(tracks: Track[], startIndex: number, options: { shuffle?: boolean } = {}) {
+  if (!tracks.length) return;
+  const shuffle = options.shuffle ?? playerStore.get().shuffle;
+  const start = options.shuffle ? Math.floor(Math.random() * tracks.length) : startIndex;
+  const queue = shuffle ? shuffled(tracks, tracks[start]) : tracks;
+  playerStore.set((s) => ({ ...s, queue, shuffle }));
+  load(shuffle ? 0 : start);
+}
+
+/** Inserts `track` right after the current one (or starts playing it if nothing is queued). */
+export function playNext(track: Track) {
+  const { queue, index } = playerStore.get();
+  if (index < 0) return playList([track], 0);
+  const rest = queue.filter((t, i) => i <= index || t.key !== track.key);
+  rest.splice(index + 1, 0, track);
+  playerStore.set((s) => ({ ...s, queue: rest }));
+}
+
+/** Appends `track` to the end of the queue (or starts playing it if nothing is queued). */
+export function addToQueue(track: Track) {
+  const { queue, index } = playerStore.get();
+  if (index < 0) return playList([track], 0);
+  playerStore.set((s) => ({ ...s, queue: [...queue, track] }));
 }
 
 export function pausePlayback() {

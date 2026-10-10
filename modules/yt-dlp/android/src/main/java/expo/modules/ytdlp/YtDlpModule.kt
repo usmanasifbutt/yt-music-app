@@ -233,6 +233,66 @@ class YtDlpModule : Module() {
       YoutubeDL.getInstance().destroyProcessById(key)
     }
 
+    // Writes (or overwrites) Music/YT Music Offline/<name>.m3u so other players see the
+    // playlist. Returns the file's URI; pass it back as existingUri on later updates.
+    AsyncFunction("writePlaylistFile") Coroutine { existingUri: String?, name: String, content: String ->
+      withContext(Dispatchers.IO) {
+        val bytes = content.toByteArray(Charsets.UTF_8)
+        val fileName = "${safeName(name)}.m3u"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+          val resolver = context.contentResolver
+          existingUri?.takeIf { it.startsWith("content://") }?.let { uriString ->
+            try {
+              val uri = Uri.parse(uriString)
+              resolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.DISPLAY_NAME, fileName) }, null, null)
+              resolver.openOutputStream(uri, "wt")!!.use { it.write(bytes) }
+              return@withContext uriString
+            } catch (e: Exception) {
+              // Gone or no longer owned by us (e.g. after reinstall): create a new one below.
+            }
+          }
+          val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, "audio/x-mpegurl")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/$PUBLIC_FOLDER")
+          }
+          val uri = resolver.insert(MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values)
+            ?: throw YtDlpException("Could not create playlist file")
+          resolver.openOutputStream(uri, "wt")!!.use { it.write(bytes) }
+          uri.toString()
+        } else {
+          existingUri?.let { File(Uri.parse(it).path ?: it).delete() }
+          val dir = File(context.getExternalFilesDir(Environment.DIRECTORY_MUSIC), PUBLIC_FOLDER).apply { mkdirs() }
+          val dest = File(dir, fileName).apply { writeBytes(bytes) }
+          MediaScannerConnection.scanFile(context, arrayOf(dest.absolutePath), arrayOf("audio/x-mpegurl"), null)
+          "file://${dest.absolutePath}"
+        }
+      }
+    }
+
+    // Storage path of each media URI relative to shared storage root, e.g.
+    // "Music/YT Music Offline/Song - Artist.m4a"; null when unknown (private files).
+    AsyncFunction("mediaPaths") Coroutine { uris: List<String> ->
+      withContext(Dispatchers.IO) {
+        uris.map { uriString ->
+          try {
+            if (uriString.startsWith("content://") && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+              val projection = arrayOf(MediaStore.MediaColumns.RELATIVE_PATH, MediaStore.MediaColumns.DISPLAY_NAME)
+              context.contentResolver.query(Uri.parse(uriString), projection, null, null, null)?.use { c ->
+                if (c.moveToFirst()) c.getString(0).trimEnd('/') + "/" + c.getString(1) else null
+              }
+            } else {
+              val path = Uri.parse(uriString).path ?: return@map null
+              val root = context.getExternalFilesDir(null)?.absolutePath ?: return@map null
+              if (path.startsWith(root)) path.removePrefix("$root/") else null
+            }
+          } catch (e: Exception) {
+            null
+          }
+        }
+      }
+    }
+
     // Deletes a published file. Returns false if Android refused (e.g. the app was
     // reinstalled and no longer owns the file); the user can delete it from Files.
     AsyncFunction("deleteMedia") Coroutine { uri: String ->
