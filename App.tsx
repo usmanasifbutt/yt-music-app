@@ -14,10 +14,21 @@ import { useStore } from './src/store';
 import { LibraryScreen } from './src/ui/LibraryScreen';
 import { MiniPlayer } from './src/ui/Player';
 import { SearchScreen } from './src/ui/SearchScreen';
-import { Icon } from './src/ui/Icon';
+import { loadInterests } from './src/interests';
+import { HomeScreen } from './src/ui/HomeScreen';
+import { Icon, IconName } from './src/ui/Icon';
 import { colors } from './src/ui/theme';
 
-type Tab = 'search' | 'library';
+type Tab = 'home' | 'search' | 'library';
+
+const TABS: { key: Tab; label: string; icon: IconName }[] = [
+  { key: 'home', label: 'Home', icon: 'home' },
+  { key: 'search', label: 'Search', icon: 'search' },
+  { key: 'library', label: 'Library', icon: 'library-music' },
+];
+
+// Before the first render, so the interest picker only appears when nothing was saved yet.
+loadInterests();
 
 // e.g. "v1.3.0 (5)" or "v1.3.0-dev.ea3c35e (6) Beta", read from the installed APK. The build
 // number is assigned by EAS at build time, so it isn't in app.json.
@@ -30,7 +41,7 @@ const APP_VERSION = [
   .join(' ');
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>('search');
+  const [tab, setTab] = useState<Tab>('home');
   const [engine, setEngine] = useState<'loading' | 'updating' | 'ready' | string>('loading');
   const activeDownloads = Object.keys(useStore(downloadsStore)).length;
 
@@ -66,7 +77,7 @@ export default function App() {
       <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
         <StatusBar style="light" />
         <View style={styles.headingRow}>
-          <Text style={styles.heading}>{tab === 'search' ? 'Search' : 'Library'}</Text>
+          <Text style={styles.heading}>{TABS.find((t) => t.key === tab)!.label}</Text>
           <Text style={styles.version}>{APP_VERSION}</Text>
         </View>
         {engine !== 'ready' && (
@@ -83,15 +94,17 @@ export default function App() {
             )}
           </View>
         )}
-        <View style={{ flex: 1 }}>{tab === 'search' ? <SearchScreen /> : <LibraryScreen />}</View>
+        <View style={{ flex: 1 }}>
+          {tab === 'home' ? <HomeScreen /> : tab === 'search' ? <SearchScreen /> : <LibraryScreen />}
+        </View>
         <MiniPlayer />
         <View style={styles.tabs}>
-          {(['search', 'library'] as const).map((t) => (
-            <Pressable key={t} style={styles.tab} onPress={() => setTab(t)}>
-              <Icon name={t === 'search' ? 'search' : 'library-music'} size={24} color={tab === t ? colors.text : colors.muted} />
-              <Text style={[styles.tabLabel, tab === t && styles.tabActive]}>
-                {t === 'search' ? 'Search' : 'Library'}
-                {t === 'library' && activeDownloads > 0 ? ` (${activeDownloads})` : ''}
+          {TABS.map((t) => (
+            <Pressable key={t.key} style={styles.tab} onPress={() => setTab(t.key)}>
+              <Icon name={t.icon} size={24} color={tab === t.key ? colors.text : colors.muted} />
+              <Text style={[styles.tabLabel, tab === t.key && styles.tabActive]}>
+                {t.label}
+                {t.key === 'library' && activeDownloads > 0 ? ` (${activeDownloads})` : ''}
               </Text>
             </Pressable>
           ))}

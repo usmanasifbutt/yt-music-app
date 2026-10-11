@@ -109,6 +109,16 @@ export async function search(query: string, limit = 25): Promise<SearchResponse>
   return { results, playlist };
 }
 
+/** Songs YouTube considers related to `id` (its auto-generated "Mix"), excluding `id` itself. */
+export async function mix(id: string, limit = 15): Promise<SearchResult[]> {
+  const url = `https://www.youtube.com/watch?v=${id}&list=RD${id}`;
+  const json = JSON.parse(await YtDlp.search(url, limit + 1));
+  return (json.entries ?? [])
+    .filter((e: any) => isVideoId(e?.id) && e.id !== id)
+    .map(toResult)
+    .slice(0, limit);
+}
+
 const sizeOf = (f: any): number => f?.filesize ?? f?.filesize_approx ?? 0;
 
 /** Download choices for a video with approximate sizes (same format rules as the native side). */
