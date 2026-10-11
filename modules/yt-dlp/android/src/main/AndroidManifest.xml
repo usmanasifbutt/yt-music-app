@@ -1,8 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
   xmlns:tools="http://schemas.android.com/tools">
   <uses-permission android:name="android.permission.INTERNET" />
+  <!-- Keeps downloads running in the background (DownloadService) -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
   <!-- youtubedl-android runs bundled python/ffmpeg binaries from the native lib dir -->
   <application
     android:extractNativeLibs="true"
-    tools:replace="android:extractNativeLibs" />
+    tools:replace="android:extractNativeLibs">
+    <service
+      android:name="expo.modules.ytdlp.DownloadService"
+      android:exported="false"
+      android:foregroundServiceType="dataSync" />
+  </application>
 </manifest>

@@ -11,6 +11,7 @@ import {
 import { downloadsStore, enqueueDownload, nativeErrorMessage } from '../downloads';
 import { libraryStore } from '../library';
 import { useStore } from '../store';
+import { Icon } from './Icon';
 import { colors } from './theme';
 
 // Shown immediately while real sizes load (and if loading them fails).
@@ -73,7 +74,7 @@ export function DownloadSheet({ item, onClose }: { item: SearchResult | null; on
                 enqueueDownload(item, o.kind, o.height);
                 onClose();
               }}>
-              <Text style={styles.icon}>{o.kind === 'audio' ? '♫' : '▶'}</Text>
+              <Icon name={o.kind === 'audio' ? 'music-note' : 'movie'} size={22} color={disabled ? colors.muted : colors.text} />
               <Text style={[styles.label, disabled && { color: colors.muted }]}>{o.label}</Text>
               {loading && !o.size ? (
                 <ActivityIndicator size="small" color={colors.muted} />

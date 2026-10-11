@@ -14,6 +14,7 @@ import {
 } from '../playlists';
 import { useStore } from '../store';
 import { AddToPlaylistSheet } from './AddToPlaylistSheet';
+import { Icon } from './Icon';
 import { NameDialog, Sheet, SheetItem } from './Sheet';
 import { colors, common, formatTime } from './theme';
 import { TrackMenu } from './TrackMenu';
@@ -117,7 +118,7 @@ export function PlaylistDetail({ id, onBack }: { id: number; onBack: () => void 
           <View style={styles.header}>
             <View style={styles.headerTop}>
               <Pressable style={common.iconButton} onPress={onBack}>
-                <Text style={common.iconText}>‹</Text>
+                <Icon name="arrow-back" />
               </Pressable>
               <View style={{ flex: 1 }}>
                 <Text style={styles.name} numberOfLines={2}>
@@ -129,7 +130,7 @@ export function PlaylistDetail({ id, onBack }: { id: number; onBack: () => void 
                 </Text>
               </View>
               <Pressable style={common.iconButton} onPress={() => setMenuOpen(true)}>
-                <Text style={[common.iconText, { color: colors.muted }]}>⋮</Text>
+                <Icon name="more-vert" color={colors.muted} />
               </Pressable>
             </View>
             <View style={styles.actions}>
@@ -174,13 +175,13 @@ export function PlaylistDetail({ id, onBack }: { id: number; onBack: () => void 
                     style={common.iconButton}
                     disabled={i === 0}
                     onPress={() => moveInPlaylist(id, item.key, -1)}>
-                    <Text style={[common.iconText, i === 0 && { color: colors.border }]}>↑</Text>
+                    <Icon name="arrow-upward" color={i === 0 ? colors.border : colors.text} />
                   </Pressable>
                   <Pressable
                     style={common.iconButton}
                     disabled={i === tracks.length - 1}
                     onPress={() => moveInPlaylist(id, item.key, 1)}>
-                    <Text style={[common.iconText, i === tracks.length - 1 && { color: colors.border }]}>↓</Text>
+                    <Icon name="arrow-downward" color={i === tracks.length - 1 ? colors.border : colors.text} />
                   </Pressable>
                 </View>
               ) : undefined
@@ -191,7 +192,7 @@ export function PlaylistDetail({ id, onBack }: { id: number; onBack: () => void 
 
       <Sheet visible={menuOpen} title={playlist.name} onClose={() => setMenuOpen(false)}>
         <SheetItem
-          icon="✎"
+          icon="edit"
           label="Rename"
           onPress={() => {
             setMenuOpen(false);
@@ -199,7 +200,7 @@ export function PlaylistDetail({ id, onBack }: { id: number; onBack: () => void 
           }}
         />
         <SheetItem
-          icon="🗑"
+          icon="delete"
           label="Delete playlist"
           destructive
           onPress={() => {

@@ -21,6 +21,7 @@ import { playlistsStore } from '../playlists';
 import { useStore } from '../store';
 import { AddToPlaylistSheet } from './AddToPlaylistSheet';
 import { PlaylistDetail, PlaylistsList } from './PlaylistScreens';
+import { Icon } from './Icon';
 import { Sheet, SheetItem } from './Sheet';
 import { colors, common } from './theme';
 import { confirmDeleteTracks, TrackMenu } from './TrackMenu';
@@ -123,7 +124,7 @@ function TrackList({ kind }: { kind: 'audio' | 'video' }) {
       {selection ? (
         <View style={styles.selectionBar}>
           <Pressable style={common.iconButton} onPress={() => setSelection(null)}>
-            <Text style={common.iconText}>✕</Text>
+            <Icon name="close" />
           </Pressable>
           <Text style={styles.selectionCount}>{selection.size} selected</Text>
           <Pressable
@@ -210,7 +211,7 @@ function TrackList({ kind }: { kind: 'audio' | 'video' }) {
         {SORT_OPTIONS.map((o) => (
           <SheetItem
             key={o.key}
-            icon={o.key === sort ? '✓' : ''}
+            icon={o.key === sort ? 'check' : 'blank'}
             label={o.label}
             onPress={() => {
               setSort(o.key);
@@ -249,10 +250,10 @@ function StorageSheet({ visible, onClose }: { visible: boolean; onClose: () => v
       title={`Storage · ${formatBytes(totalSize(library))}`}
       subtitle="Downloads in Music/YT Music and Movies/YT Music"
       onClose={onClose}>
-      <SheetItem icon="♫" label={`${audio.length} songs`} detail={formatBytes(totalSize(audio))} onPress={() => {}} />
-      <SheetItem icon="▶" label={`${videos.length} videos`} detail={formatBytes(totalSize(videos))} onPress={() => {}} />
+      <SheetItem icon="music-note" label={`${audio.length} songs`} detail={formatBytes(totalSize(audio))} onPress={() => {}} />
+      <SheetItem icon="movie" label={`${videos.length} videos`} detail={formatBytes(totalSize(videos))} onPress={() => {}} />
       <SheetItem
-        icon="🗑"
+        icon="delete-sweep"
         destructive
         disabled={!stale.length}
         label={stale.length ? `Delete ${stale.length} not played in ${STALE_DAYS}+ days` : `Nothing unplayed for ${STALE_DAYS}+ days`}
@@ -343,11 +344,11 @@ function LibraryHeader({
           </Pressable>
           {d.status === 'error' && (
             <Pressable style={common.iconButton} onPress={() => retryDownload(d.key)}>
-              <Text style={common.iconText}>↻</Text>
+              <Icon name="refresh" />
             </Pressable>
           )}
           <Pressable style={common.iconButton} onPress={() => cancelDownload(d.key)}>
-            <Text style={[common.iconText, { color: colors.muted }]}>✕</Text>
+            <Icon name="close" color={colors.muted} />
           </Pressable>
         </View>
       ))}

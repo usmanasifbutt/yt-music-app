@@ -3,6 +3,7 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { markPlayed, Track } from '../library';
 import { pausePlayback } from '../player';
+import { Icon } from './Icon';
 import { colors, common } from './theme';
 
 export function VideoPlayerModal({ track, onClose }: { track: Track | null; onClose: () => void }) {
@@ -25,7 +26,7 @@ function VideoScreen({ track, onClose }: { track: Track; onClose: () => void }) 
   return (
     <View style={[styles.root, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 }]}>
       <Pressable style={common.iconButton} onPress={onClose}>
-        <Text style={[common.iconText, { fontSize: 24 }]}>⌄</Text>
+        <Icon name="keyboard-arrow-down" size={32} />
       </Pressable>
       <View style={styles.videoWrap}>
         <VideoView player={player} style={styles.video} nativeControls contentFit="contain" />

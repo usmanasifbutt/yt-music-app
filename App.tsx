@@ -12,6 +12,7 @@ import { useStore } from './src/store';
 import { LibraryScreen } from './src/ui/LibraryScreen';
 import { MiniPlayer } from './src/ui/Player';
 import { SearchScreen } from './src/ui/SearchScreen';
+import { Icon } from './src/ui/Icon';
 import { colors } from './src/ui/theme';
 
 type Tab = 'search' | 'library';
@@ -79,7 +80,7 @@ export default function App() {
         <View style={styles.tabs}>
           {(['search', 'library'] as const).map((t) => (
             <Pressable key={t} style={styles.tab} onPress={() => setTab(t)}>
-              <Text style={[styles.tabIcon, tab === t && styles.tabActive]}>{t === 'search' ? '⌕' : '♫'}</Text>
+              <Icon name={t === 'search' ? 'search' : 'library-music'} size={24} color={tab === t ? colors.text : colors.muted} />
               <Text style={[styles.tabLabel, tab === t && styles.tabActive]}>
                 {t === 'search' ? 'Search' : 'Library'}
                 {t === 'library' && activeDownloads > 0 ? ` (${activeDownloads})` : ''}

@@ -18,12 +18,12 @@ export function AddToPlaylistSheet({ keys, onClose }: { keys: string[] | null; o
   return (
     <>
       <Sheet visible={!!keys && !naming} title="Add to playlist" subtitle={what} onClose={onClose}>
-        <SheetItem icon="+" label="New playlist" onPress={() => setNaming(true)} />
+        <SheetItem icon="playlist-add" label="New playlist" onPress={() => setNaming(true)} />
         <ScrollView>
           {playlists.map((p) => (
             <SheetItem
               key={p.id}
-              icon="≡"
+              icon="queue-music"
               label={p.name}
               detail={`${p.keys.length}`}
               onPress={() => {

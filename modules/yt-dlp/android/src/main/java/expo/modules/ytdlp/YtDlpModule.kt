@@ -206,9 +206,11 @@ class YtDlpModule : Module() {
           addOption("-o", "${work.absolutePath}/%(id)s.%(ext)s")
           addOption("-o", "thumbnail:${thumbs.absolutePath}/%(id)s.%(ext)s")
         }
+        DownloadNotifier.started(context, key, baseName)
         try {
           YoutubeDL.getInstance().execute(request, processId = key, callback = { progress, eta, _ ->
             sendEvent("onProgress", mapOf("id" to key, "progress" to progress.toDouble(), "eta" to eta))
+            DownloadNotifier.progress(context, key, progress)
           })
           val media = work.listFiles { f -> f.name.startsWith("$id.") }.orEmpty().maxByOrNull { it.length() }
             ?: throw YtDlpException("Download finished but no media file was found")
@@ -226,6 +228,7 @@ class YtDlpModule : Module() {
           throw YtDlpException(cleanError(e, "Download failed"), e)
         } finally {
           work.deleteRecursively()
+          DownloadNotifier.finished(context, key)
         }
       }
     }

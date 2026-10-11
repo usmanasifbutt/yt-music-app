@@ -1,6 +1,7 @@
 import { ReactNode, useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Icon, IconName } from './Icon';
 import { colors } from './theme';
 
 export function Sheet({
@@ -42,7 +43,8 @@ export function SheetItem({
   disabled,
   onPress,
 }: {
-  icon: string;
+  /** Material icon name; omit (or 'blank') to leave the icon column empty. */
+  icon?: IconName | 'blank';
   label: string;
   detail?: string;
   destructive?: boolean;
@@ -55,7 +57,7 @@ export function SheetItem({
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [styles.item, pressed && { backgroundColor: colors.surfaceHigh }]}>
-      <Text style={[styles.icon, { color }]}>{icon}</Text>
+      <View style={styles.icon}>{icon && icon !== 'blank' ? <Icon name={icon} size={22} color={color} /> : null}</View>
       <Text style={[styles.label, { color }]} numberOfLines={1}>
         {label}
       </Text>
@@ -129,7 +131,7 @@ const styles = StyleSheet.create({
   title: { color: colors.text, fontSize: 16, fontWeight: '700', paddingHorizontal: 20 },
   subtitle: { color: colors.muted, fontSize: 13, paddingHorizontal: 20, marginTop: 4 },
   item: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 14 },
-  icon: { fontSize: 18, width: 22, textAlign: 'center' },
+  icon: { width: 24, alignItems: 'center' },
   label: { fontSize: 15, flex: 1 },
   detail: { color: colors.muted, fontSize: 13 },
   dialogBackdrop: {

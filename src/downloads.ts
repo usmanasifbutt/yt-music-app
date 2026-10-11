@@ -1,3 +1,4 @@
+import { PermissionsAndroid, Platform } from 'react-native';
 import YtDlp, { downloadKey, MediaKind, SearchResult } from '../modules/yt-dlp';
 import { addTrack } from './library';
 import { trackAdded } from './playlists';
@@ -80,7 +81,18 @@ async function run({ key, item, kind, height }: DownloadState) {
   pump();
 }
 
+let askedForNotifications = false;
+
+// Android 13+ hides the download progress notification without this permission.
+// Downloads still continue in the background either way.
+function askForNotifications() {
+  if (askedForNotifications || Platform.OS !== 'android' || Number(Platform.Version) < 33) return;
+  askedForNotifications = true;
+  PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS).catch(() => {});
+}
+
 export function enqueueDownload(item: SearchResult, kind: MediaKind, height = 0) {
+  askForNotifications();
   const key = downloadKey(item.id, kind, height);
   const existing = downloadsStore.get()[key];
   if (existing && existing.status !== 'error') return;

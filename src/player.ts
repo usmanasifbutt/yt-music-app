@@ -1,5 +1,5 @@
 import { AudioStatus, createAudioPlayer, setAudioModeAsync } from 'expo-audio';
-import { markPlayed, Track } from './library';
+import { getSetting, markPlayed, setSetting, Track } from './library';
 import { createStore } from './store';
 
 export type PlayerState = {
@@ -10,6 +10,12 @@ export type PlayerState = {
   duration: number;
   shuffle: boolean;
   repeat: 'off' | 'all' | 'one';
+  /** Playback speed, 1 = normal. Remembered across launches. */
+  rate: number;
+  /** When the sleep timer pauses playback (epoch ms), or null. */
+  sleepAt: number | null;
+  /** Sleep timer set to "end of this track". */
+  sleepAtTrackEnd: boolean;
 };
 
 export const playerStore = createStore<PlayerState>({
@@ -20,11 +26,19 @@ export const playerStore = createStore<PlayerState>({
   duration: 0,
   shuffle: false,
   repeat: 'off',
+  rate: 1,
+  sleepAt: null,
+  sleepAtTrackEnd: false,
 });
 
+export const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2];
+
 const player = createAudioPlayer(null, { updateInterval: 500 });
+player.shouldCorrectPitch = true; // faster speech without the chipmunk effect
 
 export async function setupPlayer() {
+  const rate = getSetting('playbackRate', 1);
+  if (SPEEDS.includes(rate)) playerStore.set((s) => ({ ...s, rate }));
   // Lock screen controls on Android require doNotMix; they also keep the
   // foreground service alive so playback survives beyond ~3 min in background.
   await setAudioModeAsync({
@@ -41,6 +55,12 @@ player.addListener('playbackStatusUpdate', (status: AudioStatus) => {
     position: status.currentTime,
     duration: status.duration || s.duration,
   }));
+  // Status updates keep arriving while playing (also in the background), so they drive the timer.
+  const { sleepAt } = playerStore.get();
+  if (sleepAt && Date.now() >= sleepAt && status.playing) {
+    player.pause();
+    clearSleepTimer();
+  }
   if (status.didJustFinish) onTrackEnd();
 });
 
@@ -55,6 +75,7 @@ function load(index: number) {
   playerStore.set((s) => ({ ...s, index, position: 0, duration: track.duration ?? 0 }));
   player.replace({ uri: track.uri });
   markPlayed(track.key);
+  player.setPlaybackRate(playerStore.get().rate);
   player.play();
   const metadata = {
     title: track.title,
@@ -65,7 +86,12 @@ function load(index: number) {
 }
 
 function onTrackEnd() {
-  const { repeat } = playerStore.get();
+  const { repeat, sleepAtTrackEnd } = playerStore.get();
+  if (sleepAtTrackEnd) {
+    player.pause();
+    clearSleepTimer();
+    return;
+  }
   if (repeat === 'one') {
     player.seekTo(0).then(() => player.play());
     return;
@@ -152,6 +178,61 @@ export function toggleShuffle() {
 export function cycleRepeat() {
   const order: PlayerState['repeat'][] = ['off', 'all', 'one'];
   playerStore.set((s) => ({ ...s, repeat: order[(order.indexOf(s.repeat) + 1) % order.length] }));
+}
+
+export function setRate(rate: number) {
+  player.setPlaybackRate(rate);
+  playerStore.set((s) => ({ ...s, rate }));
+  setSetting('playbackRate', rate);
+}
+
+/** `minutes` from now, or 'track' to stop at the end of the current track. */
+export function setSleepTimer(when: number | 'track') {
+  playerStore.set((s) => ({
+    ...s,
+    sleepAt: when === 'track' ? null : Date.now() + when * 60_000,
+    sleepAtTrackEnd: when === 'track',
+  }));
+}
+
+export function clearSleepTimer() {
+  playerStore.set((s) => ({ ...s, sleepAt: null, sleepAtTrackEnd: false }));
+}
+
+/** Jumps to a queue position (from the queue view). */
+export function playAt(i: number) {
+  load(i);
+}
+
+export function removeFromQueue(i: number) {
+  const { queue, index } = playerStore.get();
+  if (i === index) {
+    // Removing the current track moves on to the next one, like most players.
+    const newQueue = queue.filter((_, j) => j !== i);
+    playerStore.set((s) => ({ ...s, queue: newQueue }));
+    if (i < newQueue.length) load(i);
+    else {
+      player.pause();
+      player.clearLockScreenControls();
+      playerStore.set((s) => ({ ...s, index: -1, playing: false }));
+    }
+    return;
+  }
+  playerStore.set((s) => ({
+    ...s,
+    queue: queue.filter((_, j) => j !== i),
+    index: i < index ? index - 1 : index,
+  }));
+}
+
+export function moveInQueue(i: number, direction: -1 | 1) {
+  const { queue, index } = playerStore.get();
+  const j = i + direction;
+  if (j < 0 || j >= queue.length) return;
+  const newQueue = [...queue];
+  [newQueue[i], newQueue[j]] = [newQueue[j], newQueue[i]];
+  const newIndex = index === i ? j : index === j ? i : index;
+  playerStore.set((s) => ({ ...s, queue: newQueue, index: newIndex }));
 }
 
 /** Removes a deleted track from the queue, skipping ahead if it was playing. */

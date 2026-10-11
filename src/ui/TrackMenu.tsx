@@ -53,15 +53,15 @@ export function TrackMenu({
   return (
     <Sheet visible title={track.title} subtitle={track.artist} onClose={onClose}>
       {track.kind === 'video' && onOpenVideo && (
-        <SheetItem icon="▶" label="Watch video" onPress={done(() => onOpenVideo(track))} />
+        <SheetItem icon="smart-display" label="Watch video" onPress={done(() => onOpenVideo(track))} />
       )}
-      <SheetItem icon="↪" label="Play next" onPress={done(() => playNext(track))} />
-      <SheetItem icon="≡+" label="Add to queue" onPress={done(() => addToQueue(track))} />
-      <SheetItem icon="+" label="Add to playlist…" onPress={done(() => onAddToPlaylist(track))} />
+      <SheetItem icon="playlist-play" label="Play next" onPress={done(() => playNext(track))} />
+      <SheetItem icon="queue" label="Add to queue" onPress={done(() => addToQueue(track))} />
+      <SheetItem icon="playlist-add" label="Add to playlist…" onPress={done(() => onAddToPlaylist(track))} />
       {onRemoveFromPlaylist && (
-        <SheetItem icon="−" label="Remove from this playlist" onPress={done(() => onRemoveFromPlaylist(track))} />
+        <SheetItem icon="playlist-remove" label="Remove from this playlist" onPress={done(() => onRemoveFromPlaylist(track))} />
       )}
-      <SheetItem icon="🗑" label="Delete from device" destructive onPress={done(() => confirmDeleteTracks([track]))} />
+      <SheetItem icon="delete" label="Delete from device" destructive onPress={done(() => confirmDeleteTracks([track]))} />
     </Sheet>
   );
 }

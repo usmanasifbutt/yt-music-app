@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Track } from '../library';
+import { Icon } from './Icon';
 import { colors, common, formatTime } from './theme';
 
 export function TrackRow({
@@ -55,7 +56,7 @@ export function TrackRow({
       {right ??
         (onMenu && selected === undefined ? (
           <Pressable style={common.iconButton} onPress={onMenu} hitSlop={8}>
-            <Text style={[common.iconText, { color: colors.muted }]}>⋮</Text>
+            <Icon name="more-vert" color={colors.muted} />
           </Pressable>
         ) : null)}
     </Pressable>
