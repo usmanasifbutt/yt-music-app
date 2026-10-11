@@ -53,7 +53,7 @@ in git (`v1.0.0`, `v1.1.0`, …).
 ```bash
 npm run bump -- minor        # or patch / major; also increments versionCode
 git commit -am "Release v1.2.0"
-git tag v1.2.0
+git tag -a v1.2.0 -m "v1.2.0"   # annotated, so --follow-tags pushes it
 git push --follow-tags
 eas build -p android --profile preview
 ```

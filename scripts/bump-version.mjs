@@ -20,4 +20,4 @@ app.expo.android.versionCode = (app.expo.android.versionCode ?? 1) + 1;
 writeFileSync(path, JSON.stringify(app, null, 2) + '\n');
 
 console.log(`version ${app.expo.version} (versionCode ${app.expo.android.versionCode})`);
-console.log(`Next: git commit -am "Release v${app.expo.version}" && git tag v${app.expo.version}`);
+console.log(`Next: git commit -am "Release v${app.expo.version}" && git tag -a v${app.expo.version} -m "v${app.expo.version}" && git push --follow-tags`);

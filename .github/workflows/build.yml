@@ -1,0 +1,45 @@
+# Starts a production Android build on EAS for every push to master.
+# The build runs on Expo's servers; this job only queues it (--no-wait), so it finishes in
+# about a minute. Follow the build at expo.dev → Projects → yt-music-app → Builds.
+name: EAS build
+
+on:
+  push:
+    branches: [master]
+    # Docs-only changes don't need a new APK.
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+  workflow_dispatch:
+
+concurrency:
+  group: eas-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # "Release vX.Y.Z" commits are built by release.yml when their tag is pushed.
+    if: ${{ !startsWith(github.event.head_commit.message, 'Release v') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - name: Set up EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          packager: npm
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Queue Android build
+        run: eas build --platform android --profile production --non-interactive --no-wait

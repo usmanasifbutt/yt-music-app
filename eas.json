@@ -16,6 +16,9 @@
     "beta": {
       "extends": "preview",
       "env": { "APP_VARIANT": "beta" }
+    },
+    "production": {
+      "android": { "buildType": "apk" }
     }
   }
 }
