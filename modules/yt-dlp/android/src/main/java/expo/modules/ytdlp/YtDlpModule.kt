@@ -1,5 +1,7 @@
 package expo.modules.ytdlp
 
+import android.app.Activity
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.media.MediaScannerConnection
@@ -10,8 +12,10 @@ import android.provider.MediaStore
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.functions.Coroutine
+import expo.modules.kotlin.functions.Queues
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +26,8 @@ class YtDlpException(message: String, cause: Throwable? = null) :
   CodedException("ERR_YTDLP", message, cause)
 
 private const val PUBLIC_FOLDER = "YT Music"
+private const val WRITE_REQUEST_CODE = 4202
+private const val MAX_PLAYLIST_BYTES = 2_000_000
 
 class YtDlpModule : Module() {
   private val context: Context
@@ -30,6 +36,80 @@ class YtDlpModule : Module() {
 
   @Volatile
   private var initialized = false
+
+  private var pendingWriteRequest: Promise? = null
+
+  /** Media files in Music/YT Music or Movies/YT Music (needs read permission for files from older installs). */
+  private fun scanMedia(isVideo: Boolean): List<Map<String, Any?>> {
+    val collection = if (isVideo) {
+      MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+    } else {
+      MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+    }
+    val top = if (isVideo) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_MUSIC
+    val projection = arrayOf(
+      MediaStore.MediaColumns._ID,
+      MediaStore.MediaColumns.DISPLAY_NAME,
+      MediaStore.MediaColumns.RELATIVE_PATH,
+      MediaStore.MediaColumns.TITLE,
+      MediaStore.MediaColumns.ARTIST,
+      MediaStore.MediaColumns.DURATION,
+      MediaStore.MediaColumns.SIZE,
+      MediaStore.MediaColumns.DATE_ADDED,
+    )
+    val items = mutableListOf<Map<String, Any?>>()
+    context.contentResolver.query(
+      collection, projection, "${MediaStore.MediaColumns.RELATIVE_PATH} = ?", arrayOf("$top/$PUBLIC_FOLDER/"), null
+    )?.use { c ->
+      while (c.moveToNext()) {
+        val id = c.getLong(0)
+        items += mapOf(
+          "uri" to ContentUris.withAppendedId(collection, id).toString(),
+          "path" to c.getString(2).trimEnd('/') + "/" + c.getString(1),
+          "title" to c.getString(3),
+          "artist" to c.getString(4),
+          "durationMs" to if (c.isNull(5)) null else c.getLong(5).toDouble(),
+          "size" to if (c.isNull(6)) null else c.getLong(6).toDouble(),
+          "addedAt" to c.getLong(7).toDouble() * 1000,
+          "kind" to if (isVideo) "video" else "audio",
+        )
+      }
+    }
+    return items
+  }
+
+  /** .m3u files in Music/YT Music, with their text. */
+  private fun scanPlaylists(): List<Map<String, Any?>> {
+    val collection = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL)
+    val projection = arrayOf(
+      MediaStore.MediaColumns._ID,
+      MediaStore.MediaColumns.DISPLAY_NAME,
+      MediaStore.MediaColumns.RELATIVE_PATH,
+      MediaStore.MediaColumns.SIZE,
+    )
+    val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} = ? AND ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
+    val items = mutableListOf<Map<String, Any?>>()
+    context.contentResolver.query(
+      collection, projection, selection, arrayOf("${Environment.DIRECTORY_MUSIC}/$PUBLIC_FOLDER/", "%.m3u"), null
+    )?.use { c ->
+      while (c.moveToNext()) {
+        if (!c.isNull(3) && c.getLong(3) > MAX_PLAYLIST_BYTES) continue
+        val uri = ContentUris.withAppendedId(collection, c.getLong(0))
+        val text = try {
+          context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+        } catch (e: Exception) {
+          null
+        } ?: continue
+        items += mapOf(
+          "uri" to uri.toString(),
+          "name" to c.getString(1),
+          "dir" to c.getString(2).trimEnd('/'),
+          "content" to text,
+        )
+      }
+    }
+    return items
+  }
 
   // First init unpacks python + ffmpeg (a few seconds), so do it lazily off the UI thread.
   private fun ensureInit() {
@@ -248,12 +328,8 @@ class YtDlpModule : Module() {
           existingUri?.takeIf { it.startsWith("content://") }?.let { uriString ->
             try {
               val uri = Uri.parse(uriString)
-              // Also (re)sets the folder, which moves files written under an older folder name.
-              val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/$PUBLIC_FOLDER")
-              }
-              resolver.update(uri, values, null, null)
+              // Renaming the playlist renames its file.
+              resolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.DISPLAY_NAME, fileName) }, null, null)
               resolver.openOutputStream(uri, "wt")!!.use { it.write(bytes) }
               return@withContext uriString
             } catch (e: Exception) {
@@ -302,22 +378,49 @@ class YtDlpModule : Module() {
       }
     }
 
-    // File size in bytes for each URI; null when it can't be determined.
-    AsyncFunction("mediaSizes") Coroutine { uris: List<String> ->
+    // Lists media and .m3u playlists in the app's shared folders, including files left by an
+    // earlier install. Empty before Android 10, where downloads lived in app storage.
+    AsyncFunction("scanFolders") Coroutine { ->
       withContext(Dispatchers.IO) {
-        uris.map { uriString ->
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+          mapOf("media" to emptyList<Any>(), "playlists" to emptyList<Any>())
+        } else {
           try {
-            if (uriString.startsWith("content://")) {
-              context.contentResolver.query(
-                Uri.parse(uriString), arrayOf(MediaStore.MediaColumns.SIZE), null, null, null
-              )?.use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0).toDouble() else null }
-            } else {
-              File(Uri.parse(uriString).path ?: uriString).takeIf { it.exists() }?.length()?.toDouble()
-            }
+            mapOf(
+              "media" to scanMedia(isVideo = false) + scanMedia(isVideo = true),
+              "playlists" to scanPlaylists(),
+            )
           } catch (e: Exception) {
-            null
+            throw YtDlpException("Could not read the music folders: ${e.message}", e)
           }
         }
+      }
+    }
+
+    // After a reinstall the app no longer owns its old files. This shows Android's
+    // "Allow YT Music to modify N items?" dialog (Android 11+) so they can be updated and
+    // deleted again. Resolves true if the user allowed it.
+    AsyncFunction("requestWriteAccess") { uris: List<String>, promise: Promise ->
+      val activity = appContext.currentActivity
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || uris.isEmpty() || activity == null) {
+        promise.resolve(false)
+        return@AsyncFunction
+      }
+      try {
+        val request = MediaStore.createWriteRequest(context.contentResolver, uris.map(Uri::parse))
+        pendingWriteRequest?.resolve(false)
+        pendingWriteRequest = promise
+        activity.startIntentSenderForResult(request.intentSender, WRITE_REQUEST_CODE, null, 0, 0, 0)
+      } catch (e: Exception) {
+        pendingWriteRequest = null
+        promise.resolve(false)
+      }
+    }.runOnQueue(Queues.MAIN)
+
+    OnActivityResult { _, payload ->
+      if (payload.requestCode == WRITE_REQUEST_CODE) {
+        pendingWriteRequest?.resolve(payload.resultCode == Activity.RESULT_OK)
+        pendingWriteRequest = null
       }
     }
 

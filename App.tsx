@@ -7,7 +7,8 @@ import YtDlp from './modules/yt-dlp';
 import { downloadsStore, nativeErrorMessage } from './src/downloads';
 import { loadLibrary, markUpdated, shouldAutoUpdate } from './src/library';
 import { setupPlayer } from './src/player';
-import { loadPlaylists, tracksMissing } from './src/playlists';
+import { loadPlaylists, syncAllM3u, tracksMissing } from './src/playlists';
+import { offerRestoreOnFreshInstall } from './src/ui/restoreFlow';
 import { useStore } from './src/store';
 import { LibraryScreen } from './src/ui/LibraryScreen';
 import { MiniPlayer } from './src/ui/Player';
@@ -33,7 +34,12 @@ export default function App() {
 
   useEffect(() => {
     loadPlaylists();
-    loadLibrary().then(tracksMissing);
+    loadLibrary().then((missing) => {
+      tracksMissing(missing);
+      // Recreate any .m3u files deleted outside the app, and keep the library index current.
+      syncAllM3u();
+      offerRestoreOnFreshInstall();
+    });
     setupPlayer();
     // First launch unpacks python + ffmpeg; do it up front so the first search is fast.
     // The yt-dlp bundled in the APK goes stale as YouTube changes, so refresh it daily.

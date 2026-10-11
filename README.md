@@ -9,7 +9,7 @@ A personal Android app that searches YouTube / YouTube Music, downloads audio to
 | Piece | Where | Notes |
 |---|---|---|
 | Search + download | `modules/yt-dlp` (local Expo module, Kotlin) | Wraps [youtubedl-android](https://github.com/yausername/youtubedl-android) 0.18.1, which bundles yt-dlp, Python and ffmpeg. |
-| Library | `src/library.ts` | Audio saved to **Music/YT Music/**, video to **Movies/YT Music/** (visible to Files and other players, with title/artist tags). Covers and the `library.json` index stay in app storage. |
+| Library | `src/library.ts` | Audio saved to **Music/YT Music/**, video to **Movies/YT Music/** (visible to Files and other players, with title/artist tags). Covers and the SQLite library database stay in app storage; playlists are mirrored as `.m3u` files in Music/YT Music. |
 | Downloads queue | `src/downloads.ts` | Up to 2 in parallel, progress events, cancel, retry. |
 | Player | `src/player.ts` | `expo-audio` with background playback, lock-screen controls, queue, shuffle, repeat. |
 | UI | `App.tsx`, `src/ui/*` | Search and Library tabs, mini player, full-screen player. |

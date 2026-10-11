@@ -1,5 +1,5 @@
 import YtDlp from '../modules/yt-dlp';
-import { db, libraryStore, removeTrack, Track } from './library';
+import { db, getSetting, libraryStore, removeTrack, setSetting, Track } from './library';
 import { createStore } from './store';
 
 export type Playlist = {
@@ -39,7 +39,7 @@ export function playlistTracks(playlist: Playlist, library: Track[]): Track[] {
 
 const find = (id: number) => playlistsStore.get().find((p) => p.id === id);
 
-function setKeys(id: number, keys: string[]) {
+function setKeys(id: number, keys: string[], write = true) {
   db.withTransactionSync(() => {
     db.runSync('DELETE FROM playlist_tracks WHERE playlist_id = ?', [id]);
     keys.forEach((key, position) =>
@@ -51,18 +51,28 @@ function setKeys(id: number, keys: string[]) {
     );
   });
   playlistsStore.set((prev) => prev.map((p) => (p.id === id ? { ...p, keys } : p)));
-  void writeM3u(id);
+  if (write) void writeM3u(id);
 }
 
-export function createPlaylist(name: string, keys: string[] = []): number {
+/**
+ * `m3uUri` adopts an existing .m3u (restore) instead of creating a new file; with
+ * `write: false` the file is left as it is until the playlist next changes.
+ */
+export function createPlaylist(
+  name: string,
+  keys: string[] = [],
+  options: { m3uUri?: string; write?: boolean } = {}
+): number {
   const createdAt = Date.now();
-  const { lastInsertRowId } = db.runSync('INSERT INTO playlists (name, created_at) VALUES (?, ?)', [
+  const m3uUri = options.m3uUri ?? null;
+  const { lastInsertRowId } = db.runSync('INSERT INTO playlists (name, created_at, m3u_uri) VALUES (?, ?, ?)', [
     name.trim(),
     createdAt,
+    m3uUri,
   ]);
   const id = Number(lastInsertRowId);
-  playlistsStore.set((prev) => [{ id, name: name.trim(), createdAt, m3uUri: null, keys: [] }, ...prev]);
-  setKeys(id, [...new Set(keys)]);
+  playlistsStore.set((prev) => [{ id, name: name.trim(), createdAt, m3uUri, keys: [] }, ...prev]);
+  setKeys(id, [...new Set(keys)], options.write ?? true);
   return id;
 }
 
@@ -115,12 +125,14 @@ export async function deleteTrackEverywhere(key: string) {
   const affected = playlistsStore.get().filter((p) => p.keys.includes(key));
   const deleted = await removeTrack(key);
   for (const p of affected) setKeys(p.id, p.keys.filter((k) => k !== key));
+  writeLibraryIndex();
   return deleted;
 }
 
 /** Call after a download finishes so playlists waiting for it update their .m3u file. */
 export function trackAdded(key: string) {
   for (const p of playlistsStore.get()) if (p.keys.includes(key)) void writeM3u(p.id);
+  writeLibraryIndex();
 }
 
 /** Call after loadLibrary() with keys of tracks whose files disappeared. */
@@ -130,6 +142,13 @@ export function tracksMissing(keys: string[]) {
       if (p.keys.includes(key)) setKeys(p.id, p.keys.filter((k) => k !== key));
     }
   }
+  if (keys.length) writeLibraryIndex();
+}
+
+/** Re-renders playlists after tracks were added in bulk (restore). */
+export function refreshAll() {
+  loadPlaylists();
+  syncAllM3u();
 }
 
 const PLAYLIST_DIR = 'Music/YT Music';
@@ -141,33 +160,78 @@ function relativeToPlaylist(mediaPath: string) {
     : `../../${mediaPath}`;
 }
 
-const pendingWrites = new Map<number, Promise<void>>();
+/** Name of the .m3u that lists every download; restore uses it to recover video IDs. */
+export const LIBRARY_INDEX_NAME = 'YT Music Library';
+
+/**
+ * Per-entry metadata line, written before each file path. Players ignore unknown "#" lines;
+ * restore reads it to recover the YouTube ID (for ✓ badges, thumbnails, de-duplication).
+ */
+export type M3uMeta = { id: string; kind: Track['kind']; h: number; added: number };
+export const META_PREFIX = '#YTM:';
+
+async function m3uContent(tracks: Track[]) {
+  const paths = await YtDlp.mediaPaths(tracks.map((t) => t.uri));
+  const lines = ['#EXTM3U'];
+  tracks.forEach((t, i) => {
+    const path = paths[i];
+    if (!path) return; // file vanished since the library was loaded
+    lines.push(`#EXTINF:${Math.round(t.duration ?? -1)},${t.artist} - ${t.title}`);
+    if (t.videoId) {
+      const meta: M3uMeta = { id: t.videoId, kind: t.kind, h: t.height, added: t.addedAt };
+      lines.push(META_PREFIX + JSON.stringify(meta));
+    }
+    lines.push(relativeToPlaylist(path));
+  });
+  return lines.join('\n') + '\n';
+}
+
+const pendingWrites = new Map<number | 'index', Promise<void>>();
+
+// Writes for the same file are serialized so an older write can't land after a newer one.
+function serialized(slot: number | 'index', task: () => Promise<void>): Promise<void> {
+  const previous = pendingWrites.get(slot) ?? Promise.resolve();
+  // Failure to mirror a file shouldn't break the in-app library or playlist.
+  const settled = previous.then(task).catch(() => {});
+  pendingWrites.set(slot, settled);
+  return settled;
+}
 
 /**
  * Mirrors the playlist to Music/YT Music/<name>.m3u so other players (Files,
- * VLC, Poweramp…) see the same playlist. Writes for one playlist are serialized.
+ * VLC, Poweramp…) see the same playlist.
  */
 function writeM3u(id: number): Promise<void> {
-  const previous = pendingWrites.get(id) ?? Promise.resolve();
-  const next = previous.then(async () => {
+  return serialized(id, async () => {
     const playlist = find(id);
     if (!playlist) return;
-    const tracks = playlistTracks(playlist, libraryStore.get());
-    const paths = await YtDlp.mediaPaths(tracks.map((t) => t.uri));
-    const lines = ['#EXTM3U'];
-    tracks.forEach((t, i) => {
-      const path = paths[i];
-      if (!path) return; // private (pre-Phase-1) downloads aren't reachable by other apps
-      lines.push(`#EXTINF:${Math.round(t.duration ?? -1)},${t.artist} - ${t.title}`, relativeToPlaylist(path));
-    });
-    const uri = await YtDlp.writePlaylistFile(playlist.m3uUri, playlist.name, lines.join('\n') + '\n');
+    const content = await m3uContent(playlistTracks(playlist, libraryStore.get()));
+    const uri = await YtDlp.writePlaylistFile(playlist.m3uUri, playlist.name, content);
     if (uri !== playlist.m3uUri) {
       db.runSync('UPDATE playlists SET m3u_uri = ? WHERE id = ?', [uri, id]);
       playlistsStore.set((prev) => prev.map((p) => (p.id === id ? { ...p, m3uUri: uri } : p)));
     }
   });
-  // Failure to mirror the file shouldn't break the in-app playlist.
-  const settled = next.catch(() => {});
-  pendingWrites.set(id, settled);
-  return settled;
+}
+
+let indexTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Rewrites "YT Music Library.m3u" (every download, newest first). Debounced for bursts of changes. */
+export function writeLibraryIndex(delayMs = 2000) {
+  if (indexTimer) clearTimeout(indexTimer);
+  indexTimer = setTimeout(() => {
+    indexTimer = null;
+    void serialized('index', async () => {
+      const existing = getSetting<string | null>('libraryIndexUri', null);
+      const content = await m3uContent(libraryStore.get());
+      const uri = await YtDlp.writePlaylistFile(existing, LIBRARY_INDEX_NAME, content);
+      if (uri !== existing) setSetting('libraryIndexUri', uri);
+    });
+  }, delayMs);
+}
+
+/** Rewrites every .m3u, recreating any that were deleted outside the app. Run at startup. */
+export function syncAllM3u() {
+  for (const p of playlistsStore.get()) void writeM3u(p.id);
+  writeLibraryIndex(0);
 }

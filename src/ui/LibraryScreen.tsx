@@ -22,6 +22,7 @@ import { useStore } from '../store';
 import { AddToPlaylistSheet } from './AddToPlaylistSheet';
 import { PlaylistDetail, PlaylistsList } from './PlaylistScreens';
 import { Icon } from './Icon';
+import { runRestore } from './restoreFlow';
 import { Sheet, SheetItem } from './Sheet';
 import { colors, common } from './theme';
 import { confirmDeleteTracks, TrackMenu } from './TrackMenu';
@@ -261,6 +262,15 @@ function StorageSheet({ visible, onClose }: { visible: boolean; onClose: () => v
         onPress={() => {
           onClose();
           confirmDeleteTracks(stale);
+        }}
+      />
+      <SheetItem
+        icon="restore"
+        label="Restore from device folders"
+        detail="After reinstall"
+        onPress={() => {
+          onClose();
+          void runRestore();
         }}
       />
     </Sheet>

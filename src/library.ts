@@ -13,11 +13,11 @@ export type Track = {
   title: string;
   artist: string;
   duration: number | null;
-  /** content:// URI in Music/ or Movies/ (or file:// for old/private downloads). */
+  /** content:// URI in Music/YT Music or Movies/YT Music (file:// on Android 9 and older). */
   uri: string;
   thumbnailPath: string | null;
   addedAt: number;
-  /** File size in bytes, null until known. */
+  /** File size in bytes. */
   size: number | null;
   playCount: number;
   lastPlayedAt: number | null;
@@ -37,7 +37,10 @@ db.execSync(`
     duration REAL,
     uri TEXT NOT NULL,
     thumbnail_path TEXT,
-    added_at INTEGER NOT NULL
+    added_at INTEGER NOT NULL,
+    size INTEGER,
+    play_count INTEGER NOT NULL DEFAULT 0,
+    last_played_at INTEGER
   );
   CREATE TABLE IF NOT EXISTS playlists (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,16 +61,6 @@ db.execSync(`
     value TEXT NOT NULL
   );
 `);
-
-// Columns added after the first release; ALTER TABLE has no IF NOT EXISTS.
-const trackColumns = new Set(db.getAllSync<{ name: string }>('PRAGMA table_info(tracks)').map((c) => c.name));
-for (const [name, type] of [
-  ['size', 'INTEGER'],
-  ['play_count', 'INTEGER NOT NULL DEFAULT 0'],
-  ['last_played_at', 'INTEGER'],
-]) {
-  if (!trackColumns.has(name)) db.execSync(`ALTER TABLE tracks ADD COLUMN ${name} ${type}`);
-}
 
 export function getSetting<T>(key: string, fallback: T): T {
   const row = db.getFirstSync<{ value: string }>('SELECT value FROM settings WHERE key = ?', [key]);
@@ -140,44 +133,7 @@ function insertTrack(t: Track) {
 
 export const libraryStore = createStore<Track[]>([]);
 
-// The first versions of the app kept the library in library.json.
-const legacyIndex = new File(Paths.document, 'library.json');
-
-function migrateLegacyIndex() {
-  if (!legacyIndex.exists) return;
-  try {
-    const old: any[] = JSON.parse(legacyIndex.textSync());
-    db.withTransactionSync(() => {
-      for (const t of old) {
-        insertTrack(
-          t.key
-            ? t
-            : {
-                key: `${t.id}:audio`,
-                videoId: t.id,
-                kind: 'audio',
-                height: 0,
-                title: t.title,
-                artist: t.artist,
-                duration: t.duration,
-                uri: t.audioPath,
-                thumbnailPath: t.thumbnailPath,
-                addedAt: t.addedAt,
-                size: null,
-                playCount: 0,
-                lastPlayedAt: null,
-              }
-        );
-      }
-    });
-    legacyIndex.delete();
-  } catch {
-    // Leave the file in place; nothing is lost and we can retry next launch.
-  }
-}
-
 export async function loadLibrary() {
-  migrateLegacyIndex();
   const tracks = db.getAllSync<TrackRow>('SELECT * FROM tracks ORDER BY added_at DESC').map(fromRow);
   // Drop entries whose file was deleted outside the app (e.g. from a file manager).
   const present = await Promise.all(tracks.map((t) => YtDlp.exists(t.uri)));
@@ -187,27 +143,23 @@ export async function loadLibrary() {
       for (const t of missing) db.runSync('DELETE FROM tracks WHERE key = ?', [t.key]);
     });
   }
-  const kept = tracks.filter((_, i) => present[i]);
-
-  // Sizes weren't recorded before v1.2; look them up once and store them.
-  const unsized = kept.filter((t) => t.size == null);
-  if (unsized.length) {
-    const sizes = await YtDlp.mediaSizes(unsized.map((t) => t.uri));
-    db.withTransactionSync(() => {
-      unsized.forEach((t, i) => {
-        t.size = sizes[i];
-        if (sizes[i] != null) db.runSync('UPDATE tracks SET size = ? WHERE key = ?', [sizes[i], t.key]);
-      });
-    });
-  }
-
-  libraryStore.set(kept);
+  libraryStore.set(tracks.filter((_, i) => present[i]));
   return missing.map((t) => t.key);
 }
 
 export function addTrack(track: Track) {
   insertTrack(track);
   libraryStore.set((prev) => [track, ...prev.filter((t) => t.key !== track.key)]);
+}
+
+/** Adds many tracks at once (restore), in one transaction and one store update. */
+export function addTracks(tracks: Track[]) {
+  if (!tracks.length) return;
+  db.withTransactionSync(() => tracks.forEach(insertTrack));
+  const keys = new Set(tracks.map((t) => t.key));
+  libraryStore.set((prev) =>
+    [...tracks, ...prev.filter((t) => !keys.has(t.key))].sort((a, b) => b.addedAt - a.addedAt)
+  );
 }
 
 /** Records a play for "Most played", "Recently played" and storage clean-up. */

@@ -35,8 +35,32 @@ declare class YtDlpNative extends NativeModule<Events> {
   exists(uri: string): Promise<boolean>;
   writePlaylistFile(existingUri: string | null, name: string, content: string): Promise<string>;
   mediaPaths(uris: string[]): Promise<(string | null)[]>;
-  mediaSizes(uris: string[]): Promise<(number | null)[]>;
+  scanFolders(): Promise<FolderScan>;
+  requestWriteAccess(uris: string[]): Promise<boolean>;
 }
+
+export type ScannedMedia = {
+  uri: string;
+  /** e.g. "Music/YT Music/Song - Artist.m4a" */
+  path: string;
+  title: string | null;
+  artist: string | null;
+  durationMs: number | null;
+  size: number | null;
+  addedAt: number;
+  kind: MediaKind;
+};
+
+export type ScannedPlaylist = {
+  uri: string;
+  /** File name, e.g. "Gym.m3u" */
+  name: string;
+  /** Folder, e.g. "Music/YT Music" */
+  dir: string;
+  content: string;
+};
+
+export type FolderScan = { media: ScannedMedia[]; playlists: ScannedPlaylist[] };
 
 const YtDlp = requireNativeModule<YtDlpNative>('YtDlp');
 
