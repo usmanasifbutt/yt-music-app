@@ -13,20 +13,32 @@ export type DownloadState = {
   status: 'queued' | 'downloading' | 'error';
   progress: number;
   error?: string;
-  /** Times YouTube's bot check stopped this download (it's retried automatically). */
-  botRetries?: number;
+  /** Already retried with the fallback YouTube clients after a bot check. */
+  usedFallback?: boolean;
 };
 
-// Starting downloads back to back (e.g. importing a playlist) makes YouTube ask
-// "Sign in to confirm you're not a bot". Space out starts, and when it happens anyway,
-// pause the queue and retry later instead of failing every item.
-const START_GAP_MS = 4000;
-const START_JITTER_MS = 3000;
-const BOT_BACKOFF_MIN = [2, 5, 10];
+// Many downloads in a row (importing a playlist) make YouTube answer "Sign in to confirm
+// you're not a bot", on any network. So: space downloads out (much more for big queues),
+// retry a bot-checked song once with other YouTube clients, then pause the whole queue for
+// longer and longer. Songs stay queued, never failed, and a success resets the waits.
+const GAP_MS = { normal: [4_000, 7_000], bulk: [15_000, 30_000] } as const;
+/** More waiting items than this switches to one-at-a-time with the bulk gap. */
+const BULK_THRESHOLD = 3;
+const FALLBACK_CLIENTS = 'tv,mweb';
+const BOT_PAUSE_MIN = [5, 15, 30];
 const isBotCheck = (message: string) => /not a bot|sign in to confirm/i.test(message);
 
-/** Set while the queue waits after YouTube's bot check. */
-export const queuePauseStore = createStore<{ until: number | null }>({ until: null });
+export type QueuePause = {
+  /** Paused until this time (epoch ms), then resumes on its own. */
+  until: number | null;
+  /** Stopped after the longest pause; waits for the user to tap Resume. */
+  stopped: boolean;
+};
+
+export const queuePauseStore = createStore<QueuePause>({ until: null, stopped: false });
+
+/** How many bot-check pauses in a row (index into BOT_PAUSE_MIN). Reset by any success. */
+let pauseLevel = 0;
 
 export const downloadsStore = createStore<Record<string, DownloadState>>({});
 
@@ -68,26 +80,44 @@ function pumpLater(ms: number) {
 /** Starts the next queued download if a slot is free, the queue isn't paused and the gap has passed. */
 function pump() {
   const now = Date.now();
-  const { until } = queuePauseStore.get();
+  const { until, stopped } = queuePauseStore.get();
+  if (stopped) return;
   if (until && now < until) return pumpLater(until - now);
-  if (until) queuePauseStore.set({ until: null });
+  if (until) queuePauseStore.set({ until: null, stopped: false });
 
   const all = Object.values(downloadsStore.get());
   const active = all.filter((d) => d.status === 'downloading').length;
-  const next = all.find((d) => d.status === 'queued');
-  if (!next || active >= settingsStore.get().maxParallel) return;
+  const queued = all.filter((d) => d.status === 'queued');
+  const bulk = queued.length + active > BULK_THRESHOLD;
+  const maxParallel = bulk ? 1 : settingsStore.get().maxParallel;
+  const next = queued[0];
+  if (!next || active >= maxParallel) return;
   if (now < nextStartAt) return pumpLater(nextStartAt - now);
 
-  nextStartAt = now + START_GAP_MS + Math.random() * START_JITTER_MS;
+  const [min, max] = bulk ? GAP_MS.bulk : GAP_MS.normal;
+  nextStartAt = now + min + Math.random() * (max - min);
   void run(next);
   pump(); // schedules the next start, if any
 }
 
-async function run({ key, item, kind, height, botRetries = 0 }: DownloadState) {
+/** YouTube refused with its bot check (even after the fallback): wait longer each time. */
+function pauseForBotCheck() {
+  if (pauseLevel >= BOT_PAUSE_MIN.length) {
+    queuePauseStore.set({ until: null, stopped: true });
+    return;
+  }
+  const until = Date.now() + BOT_PAUSE_MIN[pauseLevel] * 60_000;
+  pauseLevel++;
+  queuePauseStore.set((s) => ({ until: Math.max(s.until ?? 0, until), stopped: false }));
+}
+
+async function run({ key, item, kind, height, usedFallback }: DownloadState) {
   patch(key, { status: 'downloading', progress: 0 });
   try {
     const baseName = `${item.title} - ${item.artist}`;
-    const { uri, thumbnailPath, size } = await YtDlp.download(key, item.id, kind, height, baseName);
+    const client = usedFallback ? FALLBACK_CLIENTS : '';
+    const { uri, thumbnailPath, size } = await YtDlp.download(key, item.id, kind, height, baseName, client);
+    pauseLevel = 0;
     addTrack({
       key,
       videoId: item.id,
@@ -108,11 +138,10 @@ async function run({ key, item, kind, height, botRetries = 0 }: DownloadState) {
   } catch (e: any) {
     const message = nativeErrorMessage(e);
     if (message === 'Canceled') remove(key);
-    else if (isBotCheck(message) && botRetries < BOT_BACKOFF_MIN.length) {
-      // Put it back in the queue and hold everything for a while.
-      patch(key, { status: 'queued', progress: 0, botRetries: botRetries + 1 });
-      const until = Date.now() + BOT_BACKOFF_MIN[botRetries] * 60_000;
-      queuePauseStore.set((s) => ({ until: Math.max(s.until ?? 0, until) }));
+    else if (isBotCheck(message)) {
+      // First try the fallback clients straight away; after that, hold the whole queue.
+      patch(key, { status: 'queued', progress: 0, usedFallback: true });
+      if (usedFallback) pauseForBotCheck();
     } else patch(key, { status: 'error', error: message });
   }
   pump();
@@ -151,9 +180,10 @@ export function retryDownload(key: string) {
   if (d) enqueueDownload(d.item, d.kind, d.height);
 }
 
-/** Skip the wait after YouTube's bot check (from the Downloads view). */
+/** Skip the wait after YouTube's bot check, or restart a stopped queue (Downloads view). */
 export function resumeQueueNow() {
-  queuePauseStore.set({ until: null });
+  queuePauseStore.set({ until: null, stopped: false });
+  pauseLevel = 0;
   nextStartAt = 0;
   pump();
 }

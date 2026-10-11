@@ -29,7 +29,8 @@ declare class YtDlpNative extends NativeModule<Events> {
   update(): Promise<string>;
   search(query: string, limit: number): Promise<string>;
   formats(id: string): Promise<string>;
-  download(key: string, id: string, kind: MediaKind, height: number, baseName: string): Promise<DownloadResult>;
+  /** `client`: fallback yt-dlp player clients ("" = yt-dlp's defaults). */
+  download(key: string, id: string, kind: MediaKind, height: number, baseName: string, client: string): Promise<DownloadResult>;
   cancel(key: string): boolean;
   deleteMedia(uri: string): Promise<boolean>;
   exists(uri: string): Promise<boolean>;

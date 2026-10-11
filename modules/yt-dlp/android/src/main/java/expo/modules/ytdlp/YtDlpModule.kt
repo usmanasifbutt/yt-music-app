@@ -265,7 +265,9 @@ class YtDlpModule : Module() {
 
     // Downloads audio (original stream) or video (<= height, merged to mp4), embeds tags,
     // then publishes it to Music/ or Movies/. Emits onProgress { id: key, progress, eta }.
-    AsyncFunction("download") Coroutine { key: String, id: String, kind: String, height: Int, baseName: String ->
+    // `client`: optional yt-dlp YouTube player clients (e.g. "tv,mweb"), used as a fallback
+    // when the default ones hit "Sign in to confirm you're not a bot".
+    AsyncFunction("download") Coroutine { key: String, id: String, kind: String, height: Int, baseName: String, client: String ->
       withContext(Dispatchers.IO) {
         ensureInit()
         val isVideo = kind == "video"
@@ -280,6 +282,7 @@ class YtDlpModule : Module() {
           addOption("--no-playlist")
           // Fewer, slower requests make YouTube's "confirm you're not a bot" check less likely.
           addOption("--sleep-requests", "1")
+          if (client.isNotBlank()) addOption("--extractor-args", "youtube:player_client=$client")
           addOption("--no-mtime")
           addOption("--no-part")
           addOption("--embed-metadata")

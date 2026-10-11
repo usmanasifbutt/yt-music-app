@@ -289,17 +289,21 @@ function ActionButton({
 
 /** Shown while the queue waits after YouTube's "confirm you're not a bot" check. */
 function PausedBanner() {
-  const { until } = useStore(queuePauseStore);
-  if (!until) return null;
-  const at = new Date(until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const { until, stopped } = useStore(queuePauseStore);
+  if (!until && !stopped) return null;
+  const at = until ? new Date(until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
   return (
     <View style={styles.paused}>
-      <Icon name="hourglass-top" size={22} color={colors.accent} />
+      <Icon name={stopped ? 'pause-circle' : 'hourglass-top'} size={22} color={colors.accent} />
       <View style={{ flex: 1 }}>
-        <Text style={type.labelLg}>YouTube asked to slow down</Text>
-        <Text style={type.bodySm}>Downloads continue automatically at {at}.</Text>
+        <Text style={type.labelLg}>{stopped ? 'YouTube is limiting downloads' : 'YouTube asked to slow down'}</Text>
+        <Text style={type.bodySm}>
+          {stopped
+            ? 'Your songs are kept in the queue. Try again later, or after switching network.'
+            : `Downloads continue automatically at ${at}.`}
+        </Text>
       </View>
-      <Button label="Retry now" variant="secondary" onPress={resumeQueueNow} />
+      <Button label={stopped ? 'Resume' : 'Retry now'} variant="secondary" onPress={resumeQueueNow} />
     </View>
   );
 }
@@ -351,8 +355,8 @@ function DownloadsList({ onGoSearch }: { onGoSearch: () => void }) {
             <Text style={[type.bodySm, d.status === 'error' && { color: colors.accent }]} numberOfLines={2}>
               {d.status === 'error'
                 ? `${d.error} · tap for details`
-                : d.botRetries
-                  ? `Waiting · retry ${d.botRetries} of 3`
+                : d.usedFallback
+                  ? 'Waiting · retrying another way'
                   : 'Waiting…'}
             </Text>
           )}
