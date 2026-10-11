@@ -161,7 +161,13 @@ function relativeToPlaylist(mediaPath: string) {
 }
 
 /** Name of the .m3u that lists every download; restore uses it to recover video IDs. */
-export const LIBRARY_INDEX_NAME = 'YT Music Library';
+export const LIBRARY_INDEX_NAME = 'All downloads';
+
+/**
+ * Second line of the "All downloads" file. Restore recognises the index by this marker, not
+ * by file name, because Android renames clashing files ("All downloads (1).m3u").
+ */
+export const INDEX_MARKER = '#YTM-INDEX';
 
 /**
  * Per-entry metadata line, written before each file path. Players ignore unknown "#" lines;
@@ -170,9 +176,9 @@ export const LIBRARY_INDEX_NAME = 'YT Music Library';
 export type M3uMeta = { id: string; kind: Track['kind']; h: number; added: number };
 export const META_PREFIX = '#YTM:';
 
-async function m3uContent(tracks: Track[]) {
+async function m3uContent(tracks: Track[], isIndex = false) {
   const paths = await YtDlp.mediaPaths(tracks.map((t) => t.uri));
-  const lines = ['#EXTM3U'];
+  const lines = isIndex ? ['#EXTM3U', INDEX_MARKER] : ['#EXTM3U'];
   tracks.forEach((t, i) => {
     const path = paths[i];
     if (!path) return; // file vanished since the library was loaded
@@ -216,14 +222,17 @@ function writeM3u(id: number): Promise<void> {
 
 let indexTimer: ReturnType<typeof setTimeout> | null = null;
 
-/** Rewrites "YT Music Library.m3u" (every download, newest first). Debounced for bursts of changes. */
+/** Rewrites "All downloads.m3u" (every download, newest first). Debounced for bursts of changes. */
 export function writeLibraryIndex(delayMs = 2000) {
   if (indexTimer) clearTimeout(indexTimer);
   indexTimer = setTimeout(() => {
     indexTimer = null;
     void serialized('index', async () => {
       const existing = getSetting<string | null>('libraryIndexUri', null);
-      const content = await m3uContent(libraryStore.get());
+      // A fresh install starts empty: writing now would only create an empty copy next to the
+      // previous install's index (which restore is about to adopt).
+      if (!existing && !libraryStore.get().length) return;
+      const content = await m3uContent(libraryStore.get(), true);
       const uri = await YtDlp.writePlaylistFile(existing, LIBRARY_INDEX_NAME, content);
       if (uri !== existing) setSetting('libraryIndexUri', uri);
     });

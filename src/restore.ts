@@ -1,10 +1,10 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import { PermissionsAndroid, Platform } from 'react-native';
 import YtDlp, { downloadKey, ScannedMedia, ScannedPlaylist, thumbnailFor } from '../modules/yt-dlp';
-import { addTracks, libraryStore, setSetting, Track } from './library';
+import { addTracks, getSetting, libraryStore, setSetting, Track } from './library';
 import {
   createPlaylist,
-  LIBRARY_INDEX_NAME,
+  INDEX_MARKER,
   M3uMeta,
   META_PREFIX,
   playlistsStore,
@@ -83,7 +83,16 @@ async function fetchThumbnail(id: string): Promise<string | null> {
   }
 }
 
-const isIndex = (p: ScannedPlaylist) => p.name === `${LIBRARY_INDEX_NAME}.m3u`;
+/** The "All downloads" index carries a marker line (its name may have a copy suffix). */
+const isIndex = (p: ScannedPlaylist) =>
+  p.content
+    .split(/\r?\n/, 3)
+    .some((line) => line.trim() === INDEX_MARKER);
+
+// Android names a clashing file "Gym (1).m3u"; treat such copies as the same playlist.
+const COPY_SUFFIX = / \(\d+\)$/;
+const baseName = (p: ScannedPlaylist) => p.name.replace(/\.m3u$/i, '');
+const playlistName = (p: ScannedPlaylist) => baseName(p).replace(COPY_SUFFIX, '');
 
 /**
  * Rebuilds the library and playlists from Music/YT Music and Movies/YT Music: adds media
@@ -135,16 +144,39 @@ export async function restoreFromDevice(): Promise<RestoreResult> {
     takeover.push(m.uri);
   }
 
-  // Playlists whose name or file the app doesn't already have.
-  const existingNames = new Set(playlistsStore.get().map((p) => p.name.toLowerCase()));
-  const existingFiles = new Set(playlistsStore.get().map((p) => p.m3uUri));
-  const toCreate = parsed.filter(({ file }) => {
-    const name = file.name.replace(/\.m3u$/i, '');
-    return !isIndex(file) && !existingFiles.has(file.uri) && !existingNames.has(name.toLowerCase());
-  });
-  takeover.push(...toCreate.map(({ file }) => file.uri));
-  const index = parsed.find(({ file }) => isIndex(file));
-  if (index) takeover.push(index.file.uri);
+  // The index: keep the one in use (or the first found); extra copies get deleted.
+  const indexes = parsed.filter(({ file }) => isIndex(file));
+  const currentIndex = getSetting<string | null>('libraryIndexUri', null);
+  const keepIndex = indexes.find(({ file }) => file.uri === currentIndex) ?? indexes[0];
+  const extraFiles: string[] = indexes.filter((p) => p !== keepIndex).map(({ file }) => file.uri);
+
+  // Playlists, grouped by name so "Gym.m3u" and "Gym (1).m3u" become one playlist.
+  const groups = new Map<string, Parsed[]>();
+  for (const p of parsed) {
+    if (isIndex(p.file)) continue;
+    const key = playlistName(p.file).toLowerCase();
+    groups.set(key, [...(groups.get(key) ?? []), p]);
+  }
+  const toCreate: Parsed[] = [];
+  for (const [key, group] of groups) {
+    const existing = playlistsStore.get().find((pl) => pl.name.toLowerCase() === key);
+    if (existing) {
+      // Already in the app: any other file with its name is a stale copy.
+      extraFiles.push(...group.filter(({ file }) => file.uri !== existing.m3uUri).map(({ file }) => file.uri));
+      continue;
+    }
+    // Prefer the file without a copy suffix, then the one with the most songs.
+    const [best, ...copies] = [...group].sort(
+      (a, b) =>
+        Number(COPY_SUFFIX.test(baseName(a.file))) - Number(COPY_SUFFIX.test(baseName(b.file))) ||
+        b.entries.length - a.entries.length
+    );
+    toCreate.push(best);
+    extraFiles.push(...copies.map(({ file }) => file.uri));
+  }
+
+  takeover.push(...toCreate.map(({ file }) => file.uri), ...extraFiles);
+  if (keepIndex) takeover.push(keepIndex.file.uri);
 
   // One system dialog lets the app update/delete the old files again (Android 11+).
   const writeAccess = takeover.length ? await YtDlp.requestWriteAccess(takeover) : true;
@@ -153,13 +185,18 @@ export async function restoreFromDevice(): Promise<RestoreResult> {
   for (const { file, entries } of toCreate) {
     const keys = entries.map((e) => keyByPath.get(e.path)).filter((k): k is string => !!k);
     // Without write access, keep the old file untouched; the app writes a new copy on the next change.
-    createPlaylist(file.name.replace(/\.m3u$/i, ''), keys, {
+    createPlaylist(playlistName(file), keys, {
       m3uUri: writeAccess ? file.uri : undefined,
       write: writeAccess,
     });
   }
-  if (index && writeAccess) setSetting('libraryIndexUri', index.file.uri);
-  if (writeAccess) syncAllM3u();
+  if (writeAccess) {
+    if (keepIndex) setSetting('libraryIndexUri', keepIndex.file.uri);
+    await Promise.all(extraFiles.map((uri) => YtDlp.deleteMedia(uri).catch(() => false)));
+    syncAllM3u();
+  }
 
   return { tracks: newTracks.length, playlists: toCreate.length, writeAccess };
 }
+
+type Parsed = { file: ScannedPlaylist; entries: Entry[] };
