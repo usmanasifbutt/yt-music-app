@@ -25,7 +25,7 @@ export function Sheet({
   return (
     // The scrim covers the whole screen (including behind the sheet's rounded corners);
     // tapping above the sheet closes it.
-    <Modal transparent visible animationType="fade" onRequestClose={onClose}>
+    <Modal statusBarTranslucent navigationBarTranslucent transparent visible animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
       <Pressable style={{ flex: 1 }} onPress={onClose} />
       <View style={[styles.sheet, { paddingBottom: insets.bottom + 12 }]}>
@@ -107,7 +107,7 @@ export function NameDialog({
   if (!visible) return null;
   const valid = name.trim().length > 0;
   return (
-    <Modal transparent visible animationType="fade" onRequestClose={onCancel}>
+    <Modal statusBarTranslucent navigationBarTranslucent transparent visible animationType="fade" onRequestClose={onCancel}>
       <View style={styles.dialogBackdrop}>
         <View style={styles.dialog}>
           <Text style={styles.dialogTitle}>{title}</Text>

@@ -51,7 +51,7 @@ export function MiniPlayer() {
           <IconButton name="skip-next" size={28} onPress={() => next()} />
         </View>
       </Pressable>
-      <Modal visible={open} animationType="slide" onRequestClose={() => setOpen(false)}>
+      <Modal statusBarTranslucent navigationBarTranslucent visible={open} animationType="slide" onRequestClose={() => setOpen(false)}>
         <NowPlaying onClose={() => setOpen(false)} />
       </Modal>
     </>

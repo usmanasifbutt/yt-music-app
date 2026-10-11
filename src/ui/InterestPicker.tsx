@@ -35,7 +35,7 @@ export function InterestPicker({ visible, onClose }: { visible: boolean; onClose
   const firstTime = saved === null;
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={() => (firstTime ? done([...picked]) : onClose())}>
+    <Modal statusBarTranslucent navigationBarTranslucent visible={visible} animationType="slide" onRequestClose={() => (firstTime ? done([...picked]) : onClose())}>
       <View style={[styles.root, { paddingTop: insets.top + space.lg, paddingBottom: insets.bottom + space.md }]}>
         <Text style={type.headlineLg}>What do you listen to?</Text>
         <Text style={[type.bodyMd, { marginTop: space.sm }]}>

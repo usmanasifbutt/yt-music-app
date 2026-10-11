@@ -40,6 +40,7 @@ export function Button({
     <Pressable
       onPress={onPress}
       disabled={disabled || loading}
+      hitSlop={8}
       style={({ pressed }) => [
         styles.button,
         variant === 'primary' && styles.buttonPrimary,
@@ -117,8 +118,8 @@ export function ChipRow({ children, style }: { children: ReactNode; style?: Styl
   return (
     <ScrollView
       horizontal
-      // ScrollView grows by default; without this a chip row eats half the screen's height.
-      style={{ flexGrow: 0 }}
+      // ScrollView grows and shrinks by default: growing ate half the screen, shrinking clipped the chips.
+      style={{ flexGrow: 0, flexShrink: 0 }}
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={[styles.chipRow, style]}
       keyboardShouldPersistTaps="handled">
@@ -337,8 +338,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: space.sm,
-    minHeight: 44,
-    paddingHorizontal: 18,
+    minHeight: 48,
+    paddingHorizontal: 20,
     borderRadius: radius.pill,
   },
   buttonPrimary: { backgroundColor: colors.accent },

@@ -9,7 +9,7 @@ import { colors, common } from './theme';
 export function VideoPlayerModal({ track, onClose }: { track: Track | null; onClose: () => void }) {
   if (!track) return null;
   return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
+    <Modal statusBarTranslucent navigationBarTranslucent visible animationType="slide" onRequestClose={onClose}>
       <VideoScreen track={track} onClose={onClose} />
     </Modal>
   );
