@@ -93,7 +93,6 @@ export function SearchScreen() {
 
   // The download button follows Settings → Downloads; long-press always shows the menu.
   function quickDownload(item: SearchResult) {
-    if (defaultFormat === 'ask') return setSelected(item);
     const what = defaultFormat === 'audio' ? 'Audio' : '720p video';
     const result =
       defaultFormat === 'audio' ? enqueueDownload(item, 'audio') : enqueueDownload(item, 'video', 720);

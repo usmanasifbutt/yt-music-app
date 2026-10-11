@@ -1,12 +1,13 @@
 import { getSetting, setSetting } from './library';
 import { createStore } from './store';
 
-export type DefaultFormat = 'ask' | 'audio' | 'video720';
+/** What the download button saves: audio, or video in 720p. Long-press shows every option. */
+export type DefaultFormat = 'audio' | 'video';
+const FORMATS: DefaultFormat[] = ['audio', 'video'];
 
 export type AppSettings = {
   /** Update yt-dlp once a day at launch. */
   autoUpdate: boolean;
-  /** What the download button does: open the format menu, or download straight away. */
   defaultFormat: DefaultFormat;
   /** Simultaneous downloads (1–3). */
   maxParallel: number;
@@ -16,7 +17,7 @@ export type AppSettings = {
 
 const DEFAULTS: AppSettings = {
   autoUpdate: true,
-  defaultFormat: 'ask',
+  defaultFormat: 'audio',
   maxParallel: 2,
   consentAccepted: false,
 };
@@ -24,7 +25,9 @@ const DEFAULTS: AppSettings = {
 export const settingsStore = createStore<AppSettings>(DEFAULTS);
 
 export function loadSettings() {
-  settingsStore.set({ ...DEFAULTS, ...getSetting<Partial<AppSettings>>('app', {}) });
+  const saved = { ...DEFAULTS, ...getSetting<Partial<AppSettings>>('app', {}) };
+  if (!FORMATS.includes(saved.defaultFormat)) saved.defaultFormat = DEFAULTS.defaultFormat;
+  settingsStore.set(saved);
 }
 
 export function updateSettings(patch: Partial<AppSettings>) {

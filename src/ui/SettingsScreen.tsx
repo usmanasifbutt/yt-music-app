@@ -75,15 +75,22 @@ export function SettingsScreen({ engine }: { engine: EngineState }) {
           />
         </Group>
 
-        <Group icon="file-download" title="Downloads" subtitle="What the download button does">
-          <Segmented<DefaultFormat>
-            value={settings.defaultFormat}
-            onChange={(v) => updateSettings({ defaultFormat: v })}
-            options={[
-              { value: 'ask', label: 'Ask each time' },
-              { value: 'audio', label: 'Audio' },
-              { value: 'video720', label: 'Video 720p' },
-            ]}
+        <Group icon="file-download" title="Downloads" subtitle="Format and speed">
+          <SettingRow
+            title="Download button saves"
+            subtitle="Video is 720p. Long-press the button for other qualities."
+            right={
+              <View style={{ width: 150 }}>
+                <Segmented<DefaultFormat>
+                  value={settings.defaultFormat}
+                  onChange={(v) => updateSettings({ defaultFormat: v })}
+                  options={[
+                    { value: 'audio', label: 'Audio' },
+                    { value: 'video', label: 'Video' },
+                  ]}
+                />
+              </View>
+            }
           />
           <SettingRow
             title="Simultaneous downloads"
