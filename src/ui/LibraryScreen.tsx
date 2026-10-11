@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, BackHandler, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { cancelDownload, DownloadState, downloadsStore, retryDownload } from '../downloads';
+import {
+  cancelDownload,
+  DownloadState,
+  downloadsStore,
+  queuePauseStore,
+  resumeQueueNow,
+  retryDownload,
+} from '../downloads';
 import { libraryStore, Track } from '../library';
 import {
   applyView,
@@ -15,7 +22,7 @@ import {
 } from '../libraryView';
 import { playerStore, playList } from '../player';
 import { playlistsStore } from '../playlists';
-import { useStore } from '../store';
+import { useStore, useStoreValue } from '../store';
 import { AddToPlaylistSheet } from './AddToPlaylistSheet';
 import { Icon } from './Icon';
 import { Artwork, Badge, Button, Chip, ChipRow, EmptyState, IconButton, ProgressBar } from './kit';
@@ -31,7 +38,8 @@ type Segment = 'songs' | 'videos' | 'playlists' | 'downloads';
 export function LibraryScreen({ onGoSearch }: { onGoSearch: () => void }) {
   const [segment, setSegment] = useState<Segment>('songs');
   const [openPlaylist, setOpenPlaylist] = useState<number | null>(null);
-  const downloads = Object.values(useStore(downloadsStore));
+  // Count only, so Songs/Videos don't re-render on every download progress tick.
+  const downloadCount = useStoreValue(downloadsStore, (s) => Object.keys(s).length);
 
   // Android back closes an open playlist instead of leaving the app.
   useEffect(() => {
@@ -56,7 +64,7 @@ export function LibraryScreen({ onGoSearch }: { onGoSearch: () => void }) {
         <Chip
           label="Downloads"
           icon="file-download"
-          count={downloads.length}
+          count={downloadCount}
           active={segment === 'downloads'}
           onPress={() => setSegment('downloads')}
         />
@@ -64,7 +72,7 @@ export function LibraryScreen({ onGoSearch }: { onGoSearch: () => void }) {
       {segment === 'playlists' ? (
         <PlaylistsList onOpen={setOpenPlaylist} />
       ) : segment === 'downloads' ? (
-        <DownloadsList downloads={downloads} onGoSearch={onGoSearch} />
+        <DownloadsList onGoSearch={onGoSearch} />
       ) : (
         <TrackList key={segment} kind={segment === 'songs' ? 'audio' : 'video'} onGoSearch={onGoSearch} />
       )}
@@ -76,8 +84,7 @@ function TrackList({ kind, onGoSearch }: { kind: 'audio' | 'video'; onGoSearch: 
   const library = useStore(libraryStore);
   const playlists = useStore(playlistsStore);
   const sort = useStore(sortStore);
-  const { queue, index } = useStore(playerStore);
-  const playingKey = queue[index]?.key;
+  const playingKey = useStoreValue(playerStore, (s) => s.queue[s.index]?.key);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<FilterKey>('all');
   const [sortOpen, setSortOpen] = useState(false);
@@ -280,7 +287,25 @@ function ActionButton({
   );
 }
 
-function DownloadsList({ downloads, onGoSearch }: { downloads: DownloadState[]; onGoSearch: () => void }) {
+/** Shown while the queue waits after YouTube's "confirm you're not a bot" check. */
+function PausedBanner() {
+  const { until } = useStore(queuePauseStore);
+  if (!until) return null;
+  const at = new Date(until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return (
+    <View style={styles.paused}>
+      <Icon name="hourglass-top" size={22} color={colors.accent} />
+      <View style={{ flex: 1 }}>
+        <Text style={type.labelLg}>YouTube asked to slow down</Text>
+        <Text style={type.bodySm}>Downloads continue automatically at {at}.</Text>
+      </View>
+      <Button label="Retry now" variant="secondary" onPress={resumeQueueNow} />
+    </View>
+  );
+}
+
+function DownloadsList({ onGoSearch }: { onGoSearch: () => void }) {
+  const downloads: DownloadState[] = Object.values(useStore(downloadsStore));
   if (!downloads.length) {
     return (
       <EmptyState icon="download-done" title="No downloads in progress" text="Everything you download shows up here until it's saved to your library.">
@@ -295,6 +320,7 @@ function DownloadsList({ downloads, onGoSearch }: { downloads: DownloadState[]; 
       data={[...active, ...waiting]}
       keyExtractor={(d) => d.key}
       contentContainerStyle={{ paddingBottom: LIST_BOTTOM, gap: space.sm, paddingHorizontal: space.md }}
+      ListHeaderComponent={<PausedBanner />}
       renderItem={({ item: d }) => (
         <Pressable
           style={styles.download}
@@ -323,7 +349,11 @@ function DownloadsList({ downloads, onGoSearch }: { downloads: DownloadState[]; 
             </>
           ) : (
             <Text style={[type.bodySm, d.status === 'error' && { color: colors.accent }]} numberOfLines={2}>
-              {d.status === 'error' ? `${d.error} · tap for details` : 'Waiting…'}
+              {d.status === 'error'
+                ? `${d.error} · tap for details`
+                : d.botRetries
+                  ? `Waiting · retry ${d.botRetries} of 3`
+                  : 'Waiting…'}
             </Text>
           )}
         </Pressable>
@@ -376,6 +406,14 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: radius.md,
     backgroundColor: colors.surfaceHigh,
+  },
+  paused: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: radius.lg,
+    backgroundColor: colors.accentSoft,
   },
   download: {
     gap: space.sm,

@@ -278,6 +278,8 @@ class YtDlpModule : Module() {
           addOption("-f", formatSelector(kind, height))
           if (isVideo) addOption("--merge-output-format", "mp4")
           addOption("--no-playlist")
+          // Fewer, slower requests make YouTube's "confirm you're not a bot" check less likely.
+          addOption("--sleep-requests", "1")
           addOption("--no-mtime")
           addOption("--no-part")
           addOption("--embed-metadata")

@@ -14,7 +14,7 @@ import {
   removeFromPlaylist,
   renamePlaylist,
 } from '../playlists';
-import { useStore } from '../store';
+import { useStore, useStoreValue } from '../store';
 import { AddToPlaylistSheet } from './AddToPlaylistSheet';
 import { Icon } from './Icon';
 import { Artwork, Badge, Button, EmptyState, IconButton } from './kit';
@@ -94,7 +94,7 @@ export function PlaylistsList({ onOpen }: { onOpen: (id: number) => void }) {
 export function PlaylistDetail({ id, onBack }: { id: number; onBack: () => void }) {
   const playlist = useStore(playlistsStore).find((p) => p.id === id);
   const library = useStore(libraryStore);
-  const { queue, index } = useStore(playerStore);
+  const playingKey = useStoreValue(playerStore, (s) => s.queue[s.index]?.key);
   const [editing, setEditing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -198,7 +198,7 @@ export function PlaylistDetail({ id, onBack }: { id: number; onBack: () => void 
         renderItem={({ item, index: i }) => (
           <TrackRow
             track={item}
-            playing={queue[index]?.key === item.key}
+            playing={playingKey === item.key}
             onPress={() => (editing ? undefined : playList(tracks, i, { shuffle: false, source }))}
             onMenu={() => setMenuTrack(item)}
             right={

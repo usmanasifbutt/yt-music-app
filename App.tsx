@@ -9,7 +9,7 @@ import { loadLibrary, markUpdated, shouldAutoUpdate } from './src/library';
 import { setupPlayer } from './src/player';
 import { loadPlaylists, syncAllM3u, tracksMissing } from './src/playlists';
 import { loadSettings, settingsStore } from './src/settings';
-import { useStore } from './src/store';
+import { useStore, useStoreValue } from './src/store';
 import { HomeScreen } from './src/ui/HomeScreen';
 import { Icon, IconName } from './src/ui/Icon';
 import { LegalNotice } from './src/ui/LegalNotice';
@@ -40,7 +40,8 @@ export default function App() {
   const [engine, setEngine] = useState<EngineState>('loading');
   const [libraryLoaded, setLibraryLoaded] = useState(false);
   const { consentAccepted } = useStore(settingsStore);
-  const activeDownloads = Object.keys(useStore(downloadsStore)).length;
+  // Count only: subscribing to the whole store would re-render the app on every progress tick.
+  const activeDownloads = useStoreValue(downloadsStore, (s) => Object.keys(s).length);
 
   useEffect(() => {
     loadPlaylists();

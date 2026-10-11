@@ -1,9 +1,9 @@
 // Shared building blocks for every screen. Keep screens composed from these so the look
 // stays consistent and the bundle stays small.
+import { Image } from 'expo-image';
 import { ReactNode } from 'react';
 import {
   ActivityIndicator,
-  Image,
   Pressable,
   ScrollView,
   StyleProp,
@@ -312,7 +312,7 @@ export function Artwork({ uris, size }: { uris: (string | null | undefined)[]; s
   const box = { width: size, height: size, borderRadius: radius.md, backgroundColor: colors.surfaceHigh };
   if (list.length < 2) {
     return list[0] ? (
-      <Image source={{ uri: list[0] }} style={box} />
+      <Image source={{ uri: list[0] }} style={box} contentFit="cover" cachePolicy="memory-disk" transition={120} />
     ) : (
       <View style={[box, styles.center]}>
         <Icon name="music-note" size={size / 3} color={colors.faint} />
@@ -324,7 +324,7 @@ export function Artwork({ uris, size }: { uris: (string | null | undefined)[]; s
   return (
     <View style={[box, { flexDirection: 'row', flexWrap: 'wrap', overflow: 'hidden' }]}>
       {four.map((u, i) => (
-        <Image key={i} source={{ uri: u }} style={{ width: half, height: half }} />
+        <Image key={i} source={{ uri: u }} style={{ width: half, height: half }} contentFit="cover" cachePolicy="memory-disk" />
       ))}
     </View>
   );

@@ -10,7 +10,7 @@ import { formatBytes, STALE_DAYS, staleTracks, totalSize } from '../libraryView'
 import { playerStore, setRate, SPEEDS } from '../player';
 import { playlistsStore } from '../playlists';
 import { DefaultFormat, settingsStore, updateSettings } from '../settings';
-import { useStore } from '../store';
+import { useStore, useStoreValue } from '../store';
 import { Icon, IconName } from './Icon';
 import { InterestPicker } from './InterestPicker';
 import { Badge, Button, Card, Segmented, SettingRow, StackedBar, Stepper, Toggle } from './kit';
@@ -24,7 +24,7 @@ const RELEASES_URL = 'https://github.com/usmanasifbutt/yt-music-app/releases';
 
 export function SettingsScreen({ engine }: { engine: EngineState }) {
   const settings = useStore(settingsStore);
-  const { rate } = useStore(playerStore);
+  const rate = useStoreValue(playerStore, (s) => s.rate);
   const library = useStore(libraryStore);
   const playlists = useStore(playlistsStore);
   const interests = useStore(interestsStore);

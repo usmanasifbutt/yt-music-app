@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { Image } from 'expo-image';
+import { memo, useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,7 +17,7 @@ import { downloadsStore, enqueueDownload, nativeErrorMessage } from '../download
 import { getSetting, libraryStore, setSetting } from '../library';
 import { createPlaylist } from '../playlists';
 import { settingsStore } from '../settings';
-import { useStore } from '../store';
+import { useStore, useStoreValue } from '../store';
 import { DownloadSheet } from './DownloadSheet';
 import { Icon } from './Icon';
 import { Badge, Button, Chip, ChipRow, EmptyState, IconButton } from './kit';
@@ -38,8 +38,6 @@ export function SearchScreen() {
   const [lastQuery, setLastQuery] = useState('');
   const [limit, setLimit] = useState(PAGE);
   const [loadingMore, setLoadingMore] = useState(false);
-  const downloads = Object.values(useStore(downloadsStore));
-  const library = useStore(libraryStore);
   const { defaultFormat } = useStore(settingsStore);
 
   function saveRecent(next: string[]) {
@@ -92,13 +90,14 @@ export function SearchScreen() {
   }
 
   // The download button follows Settings → Downloads; long-press always shows the menu.
-  function quickDownload(item: SearchResult) {
+  // Stable reference so result rows (memoised) don't re-render when the screen does.
+  const quickDownload = useCallback((item: SearchResult) => {
     const what = defaultFormat === 'audio' ? 'Audio' : '720p video';
     const result =
       defaultFormat === 'audio' ? enqueueDownload(item, 'audio') : enqueueDownload(item, 'video', 720);
     const message = { queued: `Downloading ${what.toLowerCase()}`, saved: `${what} already downloaded`, busy: 'Already downloading' };
     ToastAndroid.show(message[result], ToastAndroid.SHORT);
-  }
+  }, [defaultFormat]);
 
   function importPlaylist() {
     if (!playlist || !results.length) return;
@@ -206,57 +205,78 @@ export function SearchScreen() {
               />
             ) : null
           }
-          renderItem={({ item }) => {
-            const saved = library.filter((t) => t.videoId === item.id);
-            const active = downloads.find((d) => d.item.id === item.id && d.status !== 'error');
-            return (
-              <Pressable style={styles.row} onPress={() => setSelected(item)}>
-                <View>
-                  <Image source={{ uri: item.thumbnail }} style={styles.thumb} />
-                  <Text style={styles.duration}>{formatTime(item.duration)}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={type.bodyLg} numberOfLines={2}>
-                    {item.title}
-                  </Text>
-                  <Text style={[type.bodySm, { marginTop: 2 }]} numberOfLines={1}>
-                    {item.artist}
-                  </Text>
-                  {saved.length > 0 && (
-                    <View style={styles.badges}>
-                      {saved.map((t) => (
-                        <Badge key={t.key} tone="success" label={t.kind === 'audio' ? 'Audio' : `${t.height}p`} />
-                      ))}
-                    </View>
-                  )}
-                </View>
-                <Pressable
-                  style={[styles.download, saved.length > 0 && { backgroundColor: colors.successSoft }]}
-                  onPress={() => quickDownload(item)}
-                  onLongPress={() => setSelected(item)}>
-                  {active ? (
-                    active.status === 'queued' ? (
-                      <ActivityIndicator size="small" color={colors.success} />
-                    ) : (
-                      <Text style={[type.labelMd, { color: colors.success }]}>{Math.round(active.progress)}%</Text>
-                    )
-                  ) : (
-                    <Icon
-                      name={saved.length ? 'download-done' : 'file-download'}
-                      size={22}
-                      color={saved.length ? colors.success : colors.text}
-                    />
-                  )}
-                </Pressable>
-              </Pressable>
-            );
-          }}
+          renderItem={({ item }) => <SearchRow item={item} onOpen={setSelected} onDownload={quickDownload} />}
         />
       )}
       <DownloadSheet item={selected} onClose={() => setSelected(null)} />
     </View>
   );
 }
+
+/**
+ * One result. It subscribes to its own download and saved state, so download progress
+ * re-renders only the affected row, not the whole list.
+ */
+const SearchRow = memo(function SearchRow({
+  item,
+  onOpen,
+  onDownload,
+}: {
+  item: SearchResult;
+  onOpen: (item: SearchResult) => void;
+  onDownload: (item: SearchResult) => void;
+}) {
+  // Primitive selector results: e.g. "Audio,720p" for the versions already saved.
+  const savedLabels = useStoreValue(libraryStore, (tracks) =>
+    tracks
+      .filter((t) => t.videoId === item.id)
+      .map((t) => (t.kind === 'audio' ? 'Audio' : `${t.height}p`))
+      .join(',')
+  );
+  const active = useStoreValue(downloadsStore, (all) =>
+    Object.values(all).find((d) => d.item.id === item.id && d.status !== 'error')
+  );
+  const saved = savedLabels ? savedLabels.split(',') : [];
+
+  return (
+    <Pressable style={styles.row} onPress={() => onOpen(item)}>
+      <View>
+        <Image source={{ uri: item.thumbnail }} style={styles.thumb} contentFit="cover" cachePolicy="memory-disk" transition={120} />
+        <Text style={styles.duration}>{formatTime(item.duration)}</Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={type.bodyLg} numberOfLines={2}>
+          {item.title}
+        </Text>
+        <Text style={[type.bodySm, { marginTop: 2 }]} numberOfLines={1}>
+          {item.artist}
+        </Text>
+        {saved.length > 0 && (
+          <View style={styles.badges}>
+            {saved.map((label) => (
+              <Badge key={label} tone="success" label={label} />
+            ))}
+          </View>
+        )}
+      </View>
+      <Pressable
+        style={[styles.download, saved.length > 0 && { backgroundColor: colors.successSoft }]}
+        hitSlop={6}
+        onPress={() => onDownload(item)}
+        onLongPress={() => onOpen(item)}>
+        {active ? (
+          active.status === 'queued' ? (
+            <ActivityIndicator size="small" color={colors.success} />
+          ) : (
+            <Text style={[type.labelMd, { color: colors.success }]}>{Math.round(active.progress)}%</Text>
+          )
+        ) : (
+          <Icon name={saved.length ? 'download-done' : 'file-download'} size={22} color={saved.length ? colors.success : colors.text} />
+        )}
+      </Pressable>
+    </Pressable>
+  );
+});
 
 const styles = StyleSheet.create({
   searchBar: {

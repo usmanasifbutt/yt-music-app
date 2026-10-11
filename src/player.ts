@@ -52,12 +52,13 @@ export async function setupPlayer() {
 }
 
 player.addListener('playbackStatusUpdate', (status: AudioStatus) => {
-  playerStore.set((s) => ({
-    ...s,
-    playing: status.playing,
-    position: status.currentTime,
-    duration: status.duration || s.duration,
-  }));
+  // Updates also arrive while paused; skip the ones that change nothing visible
+  // so the player UI doesn't re-render for no reason.
+  const s = playerStore.get();
+  const duration = status.duration || s.duration;
+  if (s.playing !== status.playing || Math.abs(s.position - status.currentTime) >= 0.25 || s.duration !== duration) {
+    playerStore.set((prev) => ({ ...prev, playing: status.playing, position: status.currentTime, duration }));
+  }
   // Status updates keep arriving while playing (also in the background), so they drive the timer.
   const { sleepAt } = playerStore.get();
   if (sleepAt && Date.now() >= sleepAt && status.playing) {

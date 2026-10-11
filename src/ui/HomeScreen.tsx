@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SearchResult } from '../../modules/yt-dlp';
 import { homeStore, OnlineRow, refreshHome } from '../home';
 import { interestsStore } from '../interests';
 import { libraryStore, Track } from '../library';
 import { playerStore, playList } from '../player';
 import { playlistsStore, playlistTracks } from '../playlists';
-import { useStore } from '../store';
+import { useStore, useStoreValue } from '../store';
 import { DownloadSheet } from './DownloadSheet';
 import { InterestPicker } from './InterestPicker';
 import { Artwork, Badge, Button, EmptyState, SavedDot } from './kit';
@@ -194,7 +195,7 @@ function OnlineRowView({
         return (
           <Pressable style={styles.wideCard} onPress={() => onOpen(item)} onLongPress={() => onDownload(item)}>
             <View>
-              <Image source={{ uri: item.thumbnail }} style={styles.wide} />
+              <Image source={{ uri: item.thumbnail }} style={styles.wide} contentFit="cover" cachePolicy="memory-disk" transition={120} />
               {item.duration ? <Text style={styles.duration}>{formatTime(item.duration)}</Text> : null}
               {saved && <SavedDot />}
             </View>
@@ -212,8 +213,7 @@ function OnlineRowView({
 }
 
 function LocalRow({ tracks, onOpen }: { tracks: Track[]; onOpen: (t: Track) => void }) {
-  const { queue, index } = useStore(playerStore);
-  const playingKey = queue[index]?.key;
+  const playingKey = useStoreValue(playerStore, (s) => s.queue[s.index]?.key);
   return (
     <FlatList
       horizontal
