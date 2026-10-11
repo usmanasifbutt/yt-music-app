@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import YtDlp from './modules/yt-dlp';
-import { VERSION_LABEL } from './src/appInfo';
 import { downloadsStore, nativeErrorMessage } from './src/downloads';
 import { loadInterests } from './src/interests';
 import { loadLibrary, markUpdated, shouldAutoUpdate } from './src/library';
@@ -92,11 +91,6 @@ export default function App() {
         <StatusBar style="light" />
         <View style={styles.header}>
           <Text style={type.headlineLg}>{current.label}</Text>
-          {tab === 'home' && (
-            <View style={styles.versionPill}>
-              <Text style={[type.labelMd, { color: colors.muted }]}>{VERSION_LABEL}</Text>
-            </View>
-          )}
         </View>
         {engine !== 'ready' && tab !== 'settings' && (
           <View style={styles.banner}>
@@ -157,14 +151,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 8,
-  },
-  versionPill: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
   },
   banner: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingHorizontal: 16, paddingBottom: 6 },
   tabs: {

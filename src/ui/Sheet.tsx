@@ -23,8 +23,11 @@ export function Sheet({
   const insets = useSafeAreaInsets();
   if (!visible) return null;
   return (
-    <Modal transparent visible animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} />
+    // The scrim covers the whole screen (including behind the sheet's rounded corners);
+    // tapping above the sheet closes it.
+    <Modal transparent visible animationType="fade" onRequestClose={onClose}>
+      <View style={styles.backdrop}>
+      <Pressable style={{ flex: 1 }} onPress={onClose} />
       <View style={[styles.sheet, { paddingBottom: insets.bottom + 12 }]}>
         <View style={styles.handle} />
         {title || eyebrow ? (
@@ -44,6 +47,7 @@ export function Sheet({
           </View>
         ) : null}
         {children}
+      </View>
       </View>
     </Modal>
   );

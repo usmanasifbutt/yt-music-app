@@ -46,7 +46,6 @@ export function HomeScreen() {
         .slice(0, LOCAL_ROW),
     [library]
   );
-  const recentlyAdded = useMemo(() => library.slice(0, LOCAL_ROW), [library]); // library is newest first
   const playlistCards = useMemo(
     () =>
       playlists
@@ -76,18 +75,20 @@ export function HomeScreen() {
       <ScrollView
         contentContainerStyle={{ paddingBottom: LIST_BOTTOM }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} colors={[colors.accent]} />}>
-        <View style={styles.topBar}>
-          <View style={styles.hintRow}>
-            <View style={styles.dot} />
-            <Text style={[type.labelMd, { color: colors.muted, letterSpacing: 0.8 }]}>
-              {interests?.length ? 'PICKED FOR YOU' : 'PICK INTERESTS TO FILL HOME'}
-            </Text>
+        {/* Only while no interests are chosen (skipped); afterwards they're edited in Settings. */}
+        {interests?.length === 0 && !nothingAtAll && (
+          <View style={styles.topBar}>
+            <View style={styles.hintRow}>
+              <View style={styles.dot} />
+              <Text style={[type.labelMd, { color: colors.muted, letterSpacing: 0.8 }]}>PICK INTERESTS TO FILL HOME</Text>
+            </View>
+            <Button label="Interests" icon="tune" variant="secondary" onPress={() => setPickerOpen(true)} />
           </View>
-          <Button label="Interests" icon="tune" variant="secondary" onPress={() => setPickerOpen(true)} />
-        </View>
+        )}
 
+        {/* Order: recently played → related to it → one row per interest → playlists. */}
         {recentlyPlayed.length > 0 && (
-          <Section title="Continue listening">
+          <Section title="Recently played">
             <LocalRow tracks={recentlyPlayed} onOpen={(t) => openLocal(t, recentlyPlayed)} />
           </Section>
         )}
@@ -97,12 +98,6 @@ export function HomeScreen() {
             <OnlineRowView row={row} library={library} onOpen={openOnline} onDownload={setSelected} />
           </Section>
         ))}
-
-        {recentlyAdded.length > 0 && (
-          <Section title="Recently downloaded">
-            <LocalRow tracks={recentlyAdded} onOpen={(t) => openLocal(t, recentlyAdded)} />
-          </Section>
-        )}
 
         {playlistCards.length > 0 && (
           <Section title="Your playlists">
@@ -148,23 +143,12 @@ export function HomeScreen() {
   );
 }
 
-const SEED_PREFIXES = ['Because you played ', 'More like '];
-
 function Section({ title, loading, children }: { title: string; loading?: boolean; children: React.ReactNode }) {
-  // "Because you played <song>": the song name is highlighted.
-  const prefix = SEED_PREFIXES.find((p) => title.startsWith(p));
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <Text style={[type.headlineSm, { flexShrink: 1 }]} numberOfLines={1}>
-          {prefix ? (
-            <>
-              {prefix}
-              <Text style={{ color: colors.accent }}>{title.slice(prefix.length)}</Text>
-            </>
-          ) : (
-            title
-          )}
+          {title}
         </Text>
         {loading && <ActivityIndicator size="small" color={colors.muted} />}
       </View>

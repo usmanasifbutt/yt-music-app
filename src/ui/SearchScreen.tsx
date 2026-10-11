@@ -14,7 +14,6 @@ import {
 } from 'react-native';
 import { downloadKey, search, SearchResponse, SearchResult } from '../../modules/yt-dlp';
 import { downloadsStore, enqueueDownload, nativeErrorMessage } from '../downloads';
-import { INTERESTS, interestsStore, todaysQuery } from '../interests';
 import { getSetting, libraryStore, setSetting } from '../library';
 import { createPlaylist } from '../playlists';
 import { settingsStore } from '../settings';
@@ -41,7 +40,6 @@ export function SearchScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const downloads = Object.values(useStore(downloadsStore));
   const library = useStore(libraryStore);
-  const interests = useStore(interestsStore);
   const { defaultFormat } = useStore(settingsStore);
 
   function saveRecent(next: string[]) {
@@ -129,10 +127,6 @@ export function SearchScreen() {
   }
 
   const canLoadMore = !playlist && results.length >= limit && limit < MAX_RESULTS;
-  const suggestions = (interests ?? [])
-    .map((id) => INTERESTS.find((i) => i.id === id))
-    .filter((i) => !!i)
-    .map((i) => ({ icon: i.icon, query: todaysQuery(i) }));
 
   return (
     <View style={{ flex: 1 }}>
@@ -194,19 +188,6 @@ export function SearchScreen() {
               title="Discover & download music"
               text="Search YouTube for songs, artists and recitations, or paste a video or playlist link to save it offline."
             />
-          )}
-          {suggestions.length > 0 && (
-            <View style={{ marginTop: space.lg }}>
-              <View style={styles.listHeader}>
-                <Text style={[type.labelMd, { color: colors.muted, letterSpacing: 0.8 }]}>TRY SEARCHING FOR</Text>
-                <Icon name="trending-up" size={18} color={colors.muted} />
-              </View>
-              <ChipRow>
-                {suggestions.map((s) => (
-                  <Chip key={s.query} label={s.query} icon={s.icon} onPress={() => runSearch(s.query)} />
-                ))}
-              </ChipRow>
-            </View>
           )}
         </ScrollView>
       ) : (

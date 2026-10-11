@@ -16,36 +16,26 @@ export const homeStore = createStore<OnlineRow[]>([]);
 
 const TTL_MS = 24 * 60 * 60 * 1000;
 const ROW_SIZE = 12;
-const MIX_ROWS = 2;
+export const MIX_TITLE = 'Inspired by your listening';
 const PARALLEL = 2; // each fetch is a yt-dlp (Python) process
 
 type Cached = { fetchedAt: number; items: SearchResult[] };
 type RowDef = { key: string; title: string; load: () => Promise<SearchResult[]> };
 
-/** "Because you played…" seeds: most played first, topped up with recent downloads. */
-function mixSeeds(library: Track[]): { track: Track; played: boolean }[] {
+/** Seed for the related-songs row: the last thing played, else the newest download. */
+function mixSeed(library: Track[]): Track | undefined {
   const withId = library.filter((t) => t.videoId);
-  const played = [...withId].filter((t) => t.playCount > 0).sort((a, b) => b.playCount - a.playCount);
-  const recent = [...withId].sort((a, b) => b.addedAt - a.addedAt);
-  const seeds: { track: Track; played: boolean }[] = [];
-  for (const [list, wasPlayed] of [
-    [played, true],
-    [recent, false],
-  ] as const) {
-    for (const t of list) {
-      if (seeds.length >= MIX_ROWS) break;
-      if (!seeds.some((s) => s.track.videoId === t.videoId)) seeds.push({ track: t, played: wasPlayed });
-    }
-  }
-  return seeds;
+  const lastPlayed = withId
+    .filter((t) => t.lastPlayedAt)
+    .sort((a, b) => b.lastPlayedAt! - a.lastPlayedAt!)[0];
+  return lastPlayed ?? [...withId].sort((a, b) => b.addedAt - a.addedAt)[0];
 }
 
 function rowDefs(): RowDef[] {
-  const mixes: RowDef[] = mixSeeds(libraryStore.get()).map(({ track, played }) => ({
-    key: `mix:${track.videoId}`,
-    title: `${played ? 'Because you played' : 'More like'} ${track.title}`,
-    load: () => mix(track.videoId, ROW_SIZE),
-  }));
+  const seed = mixSeed(libraryStore.get());
+  const mixes: RowDef[] = seed
+    ? [{ key: `mix:${seed.videoId}`, title: MIX_TITLE, load: () => mix(seed.videoId, ROW_SIZE) }]
+    : [];
   const interests: RowDef[] = (interestsStore.get() ?? [])
     .map((id) => INTERESTS.find((i) => i.id === id))
     .filter((i) => !!i)

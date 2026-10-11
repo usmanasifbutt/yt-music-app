@@ -117,6 +117,8 @@ export function ChipRow({ children, style }: { children: ReactNode; style?: Styl
   return (
     <ScrollView
       horizontal
+      // ScrollView grows by default; without this a chip row eats half the screen's height.
+      style={{ flexGrow: 0 }}
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={[styles.chipRow, style]}
       keyboardShouldPersistTaps="handled">
