@@ -1,9 +1,11 @@
 import { ReactNode } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Track } from '../library';
 import { Icon } from './Icon';
-import { colors, common, formatTime } from './theme';
+import { Artwork, Badge, IconButton } from './kit';
+import { colors, common, formatTime, radius, type } from './theme';
 
+/** 64px library row: artwork, title, artist · length + format badge, trailing ⋮. */
 export function TrackRow({
   track,
   playing,
@@ -25,63 +27,60 @@ export function TrackRow({
 }) {
   return (
     <Pressable
-      style={({ pressed }) => [common.row, (pressed || selected) && { backgroundColor: colors.surface }]}
+      style={({ pressed }) => [common.row, selected && styles.selected, pressed && { backgroundColor: colors.surface }]}
       onPress={onPress}
       onLongPress={onLongPress}>
       {selected !== undefined && (
         <View style={[styles.check, selected && styles.checkOn]}>
-          {selected && <Text style={styles.checkMark}>✓</Text>}
+          {selected && <Icon name="check" size={16} color={colors.onAccent} />}
         </View>
       )}
       <View>
-        {track.thumbnailPath ? (
-          <Image source={{ uri: track.thumbnailPath }} style={common.thumb} />
-        ) : (
-          <View style={common.thumb} />
-        )}
-        {track.kind === 'video' && (
-          <View style={styles.videoBadge}>
-            <Text style={styles.videoBadgeText}>{track.height}p</Text>
+        <Artwork uris={[track.thumbnailPath]} size={48} />
+        {playing && (
+          <View style={styles.playingOverlay}>
+            <Icon name="graphic-eq" size={22} color={colors.accent} />
           </View>
         )}
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={[common.title, playing && { color: colors.accent }]} numberOfLines={2}>
+        <Text style={[type.bodyLg, playing && { color: colors.accent }]} numberOfLines={1}>
           {track.title}
         </Text>
-        <Text style={common.subtitle} numberOfLines={1}>
-          {track.artist} · {formatTime(track.duration)}
-        </Text>
+        <View style={styles.meta}>
+          <Text style={[type.bodySm, { flexShrink: 1 }]} numberOfLines={1}>
+            {track.artist} · {formatTime(track.duration)}
+          </Text>
+          <Badge label={track.kind === 'video' ? `Video ${track.height}p` : 'Audio'} tone={track.kind === 'video' ? 'success' : 'neutral'} />
+        </View>
       </View>
-      {right ??
-        (onMenu && selected === undefined ? (
-          <Pressable style={common.iconButton} onPress={onMenu} hitSlop={8}>
-            <Icon name="more-vert" color={colors.muted} />
-          </Pressable>
-        ) : null)}
+      {right ?? (onMenu && selected === undefined ? <IconButton name="more-vert" color={colors.faint} onPress={onMenu} /> : null)}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
+  selected: { backgroundColor: colors.accentSoft },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
   check: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 24,
+    height: 24,
+    borderRadius: 6,
     borderWidth: 2,
-    borderColor: colors.muted,
+    borderColor: colors.faint,
     alignItems: 'center',
     justifyContent: 'center',
   },
   checkOn: { backgroundColor: colors.accent, borderColor: colors.accent },
-  checkMark: { color: '#fff', fontSize: 13, fontWeight: '800' },
-  videoBadge: {
+  playingOverlay: {
     position: 'absolute',
-    right: 2,
-    bottom: 2,
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    borderRadius: 3,
-    paddingHorizontal: 3,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: radius.md,
+    backgroundColor: colors.overlaySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  videoBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
 });

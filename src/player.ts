@@ -16,6 +16,8 @@ export type PlayerState = {
   sleepAt: number | null;
   /** Sleep timer set to "end of this track". */
   sleepAtTrackEnd: boolean;
+  /** Where the queue came from, shown as "Playing from …" (e.g. "Playlist · Gym"). */
+  source: string | null;
 };
 
 export const playerStore = createStore<PlayerState>({
@@ -29,6 +31,7 @@ export const playerStore = createStore<PlayerState>({
   rate: 1,
   sleepAt: null,
   sleepAtTrackEnd: false,
+  source: null,
 });
 
 export const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2];
@@ -112,12 +115,16 @@ function shuffled(tracks: Track[], first: Track) {
  * Plays `tracks` starting at `startIndex`, respecting the shuffle setting unless
  * `options.shuffle` overrides it (a playlist's Shuffle button turns shuffle on).
  */
-export function playList(tracks: Track[], startIndex: number, options: { shuffle?: boolean } = {}) {
+export function playList(
+  tracks: Track[],
+  startIndex: number,
+  options: { shuffle?: boolean; source?: string } = {}
+) {
   if (!tracks.length) return;
   const shuffle = options.shuffle ?? playerStore.get().shuffle;
   const start = options.shuffle ? Math.floor(Math.random() * tracks.length) : startIndex;
   const queue = shuffle ? shuffled(tracks, tracks[start]) : tracks;
-  playerStore.set((s) => ({ ...s, queue, shuffle }));
+  playerStore.set((s) => ({ ...s, queue, shuffle, source: options.source ?? null }));
   load(shuffle ? 0 : start);
 }
 

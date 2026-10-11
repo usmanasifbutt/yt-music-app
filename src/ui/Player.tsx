@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { FlatList, Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useRef, useState } from 'react';
+import { FlatList, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   clearSleepTimer,
@@ -18,9 +18,11 @@ import {
   toggleShuffle,
 } from '../player';
 import { useStore } from '../store';
-import { Icon } from './Icon';
+import { AddToPlaylistSheet } from './AddToPlaylistSheet';
+import { Icon, IconName } from './Icon';
+import { Artwork, IconButton } from './kit';
 import { Sheet, SheetItem } from './Sheet';
-import { colors, common, formatTime } from './theme';
+import { colors, formatTime, glow, radius, space, type } from './theme';
 
 export function MiniPlayer() {
   const { queue, index, playing, position, duration } = useStore(playerStore);
@@ -32,127 +34,120 @@ export function MiniPlayer() {
   return (
     <>
       <Pressable style={styles.mini} onPress={() => setOpen(true)}>
-        <View style={[styles.miniProgress, { width: `${pct}%` }]} />
-        <View style={[common.row, { paddingVertical: 8 }]}>
-          {track.thumbnailPath ? (
-            <Image source={{ uri: track.thumbnailPath }} style={styles.miniThumb} />
-          ) : (
-            <View style={styles.miniThumb} />
-          )}
+        <View style={styles.miniTrack}>
+          <View style={[styles.miniFill, { width: `${pct}%` }]} />
+        </View>
+        <View style={styles.miniRow}>
+          <Artwork uris={[track.thumbnailPath]} size={40} />
           <View style={{ flex: 1 }}>
-            <Text style={common.title} numberOfLines={1}>
+            <Text style={type.labelLg} numberOfLines={1}>
               {track.title}
             </Text>
-            <Text style={common.subtitle} numberOfLines={1}>
+            <Text style={type.bodySm} numberOfLines={1}>
               {track.artist}
             </Text>
           </View>
-          <Pressable style={common.iconButton} onPress={togglePlay} hitSlop={6}>
-            <Icon name={playing ? 'pause' : 'play-arrow'} size={30} />
-          </Pressable>
-          <Pressable style={common.iconButton} onPress={() => next()} hitSlop={6}>
-            <Icon name="skip-next" size={28} />
-          </Pressable>
+          <IconButton name={playing ? 'pause' : 'play-arrow'} size={30} color={colors.accent} onPress={togglePlay} />
+          <IconButton name="skip-next" size={28} onPress={() => next()} />
         </View>
       </Pressable>
       <Modal visible={open} animationType="slide" onRequestClose={() => setOpen(false)}>
-        <FullPlayer onClose={() => setOpen(false)} />
+        <NowPlaying onClose={() => setOpen(false)} />
       </Modal>
     </>
   );
 }
 
 function sleepLabel(sleepAt: number | null, atTrackEnd: boolean) {
-  if (atTrackEnd) return 'End of track';
+  if (atTrackEnd) return 'Track end';
   if (!sleepAt) return 'Sleep';
-  return `${Math.max(1, Math.ceil((sleepAt - Date.now()) / 60_000))} min`;
+  return `${Math.max(1, Math.ceil((sleepAt - Date.now()) / 60_000))}m`;
 }
 
-function FullPlayer({ onClose }: { onClose: () => void }) {
-  const { queue, index, playing, position, duration, shuffle, repeat, rate, sleepAt, sleepAtTrackEnd } =
+function NowPlaying({ onClose }: { onClose: () => void }) {
+  const { queue, index, playing, position, duration, shuffle, repeat, rate, sleepAt, sleepAtTrackEnd, source } =
     useStore(playerStore);
   const insets = useSafeAreaInsets();
-  const [barWidth, setBarWidth] = useState(1);
   const [sheet, setSheet] = useState<'queue' | 'sleep' | 'speed' | null>(null);
+  const [addKeys, setAddKeys] = useState<string[] | null>(null);
   const track = queue[index];
   if (!track) return null;
-  const pct = duration ? Math.min(100, (position / duration) * 100) : 0;
   const sleepOn = !!sleepAt || sleepAtTrackEnd;
+  const upNext = queue.slice(index + 1, index + 4);
 
   return (
-    <View style={[styles.full, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 }]}>
-      <Pressable style={common.iconButton} onPress={onClose} hitSlop={8}>
-        <Icon name="keyboard-arrow-down" size={32} />
-      </Pressable>
-
-      <View style={styles.artWrap}>
-        {track.thumbnailPath ? (
-          <Image source={{ uri: track.thumbnailPath }} style={styles.art} resizeMode="cover" />
-        ) : (
-          <View style={styles.art} />
-        )}
-      </View>
-
-      <Text style={styles.title} numberOfLines={2}>
-        {track.title}
-      </Text>
-      <Text style={styles.artist} numberOfLines={1}>
-        {track.artist}
-      </Text>
-
-      <Pressable
-        style={styles.seekHit}
-        onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
-        onPress={(e) => duration && seek((e.nativeEvent.locationX / barWidth) * duration)}>
-        <View style={styles.seekTrack}>
-          <View style={[styles.seekFill, { width: `${pct}%` }]} />
+    <View style={[styles.full, { paddingTop: insets.top + space.sm }]}>
+      <View style={styles.topBar}>
+        <IconButton name="keyboard-arrow-down" size={30} onPress={onClose} />
+        <View style={{ flex: 1, alignItems: 'center' }}>
+          <Text style={[type.labelSm, { color: colors.accent, letterSpacing: 1 }]} numberOfLines={1}>
+            {source ? `PLAYING FROM ${source.toUpperCase()}` : 'NOW PLAYING'}
+          </Text>
+          <Text style={type.labelLg}>Now Playing</Text>
         </View>
-      </Pressable>
-      <View style={styles.times}>
-        <Text style={styles.time}>{formatTime(position)}</Text>
-        <Text style={styles.time}>{formatTime(duration)}</Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      <View style={styles.controls}>
-        <Pressable style={common.iconButton} onPress={toggleShuffle}>
-          <Icon name="shuffle" size={24} color={shuffle ? colors.accent : colors.muted} />
-        </Pressable>
-        <Pressable style={common.iconButton} onPress={previous}>
-          <Icon name="skip-previous" size={38} />
-        </Pressable>
-        <Pressable style={styles.playButton} onPress={togglePlay}>
-          <Icon name={playing ? 'pause' : 'play-arrow'} size={40} color={colors.bg} />
-        </Pressable>
-        <Pressable style={common.iconButton} onPress={() => next()}>
-          <Icon name="skip-next" size={38} />
-        </Pressable>
-        <Pressable style={common.iconButton} onPress={cycleRepeat}>
-          <Icon
+      <ScrollView contentContainerStyle={{ paddingHorizontal: space.lg, paddingBottom: insets.bottom + space.lg }}>
+        <View style={styles.artWrap}>
+          <ArtworkLarge uri={track.thumbnailPath} />
+        </View>
+
+        <Text style={type.headlineMd} numberOfLines={2}>
+          {track.title}
+        </Text>
+        <Text style={[type.bodyLg, { color: colors.muted, marginTop: 4 }]} numberOfLines={1}>
+          {track.artist}
+        </Text>
+
+        <Seekbar position={position} duration={duration} />
+
+        <View style={styles.controls}>
+          <IconButton name="shuffle" color={shuffle ? colors.accent : colors.muted} onPress={toggleShuffle} />
+          <IconButton name="skip-previous" size={36} onPress={previous} />
+          <Pressable style={styles.playFab} onPress={togglePlay}>
+            <Icon name={playing ? 'pause' : 'play-arrow'} size={40} color={colors.onAccent} />
+          </Pressable>
+          <IconButton name="skip-next" size={36} onPress={() => next()} />
+          <IconButton
             name={repeat === 'one' ? 'repeat-one' : 'repeat'}
-            size={24}
             color={repeat !== 'off' ? colors.accent : colors.muted}
+            onPress={cycleRepeat}
           />
-        </Pressable>
-      </View>
+        </View>
 
-      <View style={styles.extras}>
-        <Pressable style={styles.extra} onPress={() => setSheet('speed')}>
-          <Icon name="speed" size={20} color={rate !== 1 ? colors.accent : colors.muted} />
-          <Text style={[styles.extraText, rate !== 1 && { color: colors.accent }]}>{rate}×</Text>
-        </Pressable>
-        <Pressable style={styles.extra} onPress={() => setSheet('sleep')}>
-          <Icon name="bedtime" size={20} color={sleepOn ? colors.accent : colors.muted} />
-          <Text style={[styles.extraText, sleepOn && { color: colors.accent }]}>
-            {sleepLabel(sleepAt, sleepAtTrackEnd)}
-          </Text>
-        </Pressable>
-        <Pressable style={styles.extra} onPress={() => setSheet('queue')}>
-          <Icon name="queue-music" size={20} color={colors.muted} />
-          <Text style={styles.extraText}>
-            {index + 1} / {queue.length}
-          </Text>
-        </Pressable>
-      </View>
+        <View style={styles.extras}>
+          <Extra icon="speed" label={`${rate}×`} active={rate !== 1} onPress={() => setSheet('speed')} />
+          <Extra icon="bedtime" label={sleepLabel(sleepAt, sleepAtTrackEnd)} active={sleepOn} onPress={() => setSheet('sleep')} />
+          <Extra icon="playlist-add" label="Save" onPress={() => setAddKeys([track.key])} />
+          <Extra icon="queue-music" label={`${index + 1}/${queue.length}`} onPress={() => setSheet('queue')} />
+        </View>
+
+        {upNext.length > 0 && (
+          <View style={styles.upNext}>
+            <View style={styles.upNextHeader}>
+              <Text style={type.headlineSm}>Up next</Text>
+              <Pressable onPress={() => setSheet('queue')} hitSlop={8}>
+                <Text style={[type.labelLg, { color: colors.muted }]}>Full queue</Text>
+              </Pressable>
+            </View>
+            {upNext.map((t, i) => (
+              <Pressable key={`${t.key}-${i}`} style={styles.upNextRow} onPress={() => playAt(index + 1 + i)}>
+                <Artwork uris={[t.thumbnailPath]} size={40} />
+                <View style={{ flex: 1 }}>
+                  <Text style={type.labelLg} numberOfLines={1}>
+                    {t.title}
+                  </Text>
+                  <Text style={type.bodySm} numberOfLines={1}>
+                    {t.artist} · {formatTime(t.duration)}
+                  </Text>
+                </View>
+                <IconButton name="close" size={20} color={colors.faint} onPress={() => removeFromQueue(index + 1 + i)} />
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </ScrollView>
 
       <Sheet visible={sheet === 'speed'} title="Playback speed" onClose={() => setSheet(null)}>
         {SPEEDS.map((s) => (
@@ -208,33 +203,100 @@ function FullPlayer({ onClose }: { onClose: () => void }) {
       <Sheet visible={sheet === 'queue'} title="Up next" subtitle={`${queue.length} in queue`} onClose={() => setSheet(null)}>
         <FlatList
           data={queue}
+          style={{ flexShrink: 1 }}
           keyExtractor={(t, i) => `${t.key}-${i}`}
           initialScrollIndex={Math.max(0, index - 2)}
           getItemLayout={(_, i) => ({ length: QUEUE_ROW, offset: QUEUE_ROW * i, index: i })}
           renderItem={({ item, index: i }) => (
             <Pressable style={[styles.queueRow, i === index && { backgroundColor: colors.surfaceHigh }]} onPress={() => playAt(i)}>
+              <Artwork uris={[item.thumbnailPath]} size={40} />
               <View style={{ flex: 1 }}>
-                <Text style={[common.title, i === index && { color: colors.accent }]} numberOfLines={1}>
+                <Text style={[type.labelLg, i === index && { color: colors.accent }]} numberOfLines={1}>
                   {item.title}
                 </Text>
-                <Text style={common.subtitle} numberOfLines={1}>
-                  {item.artist} · {formatTime(item.duration)}
+                <Text style={type.bodySm} numberOfLines={1}>
+                  {i === index ? 'Playing now' : `${item.artist} · ${formatTime(item.duration)}`}
                 </Text>
               </View>
-              <Pressable style={styles.queueButton} disabled={i === 0} onPress={() => moveInQueue(i, -1)}>
-                <Icon name="arrow-upward" size={20} color={i === 0 ? colors.border : colors.muted} />
-              </Pressable>
-              <Pressable style={styles.queueButton} disabled={i === queue.length - 1} onPress={() => moveInQueue(i, 1)}>
-                <Icon name="arrow-downward" size={20} color={i === queue.length - 1 ? colors.border : colors.muted} />
-              </Pressable>
-              <Pressable style={styles.queueButton} onPress={() => removeFromQueue(i)}>
-                <Icon name="close" size={20} color={colors.muted} />
-              </Pressable>
+              <IconButton name="arrow-upward" size={20} color={colors.muted} disabled={i === 0} onPress={() => moveInQueue(i, -1)} />
+              <IconButton
+                name="arrow-downward"
+                size={20}
+                color={colors.muted}
+                disabled={i === queue.length - 1}
+                onPress={() => moveInQueue(i, 1)}
+              />
+              <IconButton name="close" size={20} color={colors.faint} onPress={() => removeFromQueue(i)} />
             </Pressable>
           )}
         />
       </Sheet>
+      <AddToPlaylistSheet keys={addKeys} onClose={() => setAddKeys(null)} />
     </View>
+  );
+}
+
+function ArtworkLarge({ uri }: { uri: string | null }) {
+  const [width, setWidth] = useState(0);
+  return (
+    <View style={{ width: '100%' }} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+      {width > 0 && <Artwork uris={[uri]} size={width} />}
+    </View>
+  );
+}
+
+/** Draggable progress bar: drag or tap anywhere to seek; the time follows your finger. */
+function Seekbar({ position, duration }: { position: number; duration: number }) {
+  const bar = useRef<View>(null);
+  const geometry = useRef({ x: 0, width: 1 });
+  const durationRef = useRef(duration);
+  durationRef.current = duration;
+  const [drag, setDrag] = useState<number | null>(null);
+
+  const responder = useMemo(() => {
+    const ratioAt = (pageX: number) => Math.max(0, Math.min(1, (pageX - geometry.current.x) / geometry.current.width));
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (e) => setDrag(ratioAt(e.nativeEvent.pageX)),
+      onPanResponderMove: (e) => setDrag(ratioAt(e.nativeEvent.pageX)),
+      onPanResponderRelease: (e) => {
+        const ratio = ratioAt(e.nativeEvent.pageX);
+        setDrag(null);
+        if (durationRef.current) seek(ratio * durationRef.current);
+      },
+      onPanResponderTerminate: () => setDrag(null),
+    });
+  }, []);
+
+  const ratio = drag ?? (duration ? Math.min(1, position / duration) : 0);
+  return (
+    <View style={{ marginTop: space.lg }}>
+      <View
+        ref={bar}
+        style={styles.seekHit}
+        onLayout={() => bar.current?.measureInWindow((x, _y, width) => (geometry.current = { x, width: width || 1 }))}
+        {...responder.panHandlers}>
+        <View style={styles.seekTrack}>
+          <View style={[styles.seekFill, { width: `${ratio * 100}%` }]} />
+        </View>
+        <View style={[styles.thumb, drag !== null && styles.thumbActive, { left: `${ratio * 100}%` }]} />
+      </View>
+      <View style={styles.times}>
+        <Text style={styles.time}>{formatTime(drag !== null ? drag * duration : position)}</Text>
+        <Text style={styles.time}>{formatTime(duration)}</Text>
+      </View>
+    </View>
+  );
+}
+
+function Extra({ icon, label, active, onPress }: { icon: IconName; label: string; active?: boolean; onPress: () => void }) {
+  const color = active ? colors.accent : colors.muted;
+  return (
+    <Pressable style={styles.extra} onPress={onPress}>
+      <Icon name={icon} size={20} color={color} />
+      <Text style={[type.labelMd, { color }]}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -242,40 +304,52 @@ const QUEUE_ROW = 64;
 
 const styles = StyleSheet.create({
   mini: { backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border },
-  miniProgress: { height: 2, backgroundColor: colors.accent },
-  miniThumb: { width: 44, height: 44, borderRadius: 4, backgroundColor: colors.surfaceHigh },
-  full: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: 24 },
-  artWrap: { alignItems: 'center', marginVertical: 20 },
-  art: {
-    width: '100%',
-    aspectRatio: 1,
-    borderRadius: 12,
-    backgroundColor: colors.surfaceHigh,
+  miniTrack: { height: 2, backgroundColor: colors.border },
+  miniFill: { height: 2, backgroundColor: colors.accent },
+  miniRow: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 62, paddingLeft: space.md, paddingRight: space.sm },
+  full: { flex: 1, backgroundColor: colors.bg },
+  topBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.sm },
+  artWrap: {
+    marginVertical: space.lg,
+    borderRadius: radius.md,
+    boxShadow: glow.artwork,
   },
-  title: { color: colors.text, fontSize: 20, fontWeight: '700' },
-  artist: { color: colors.muted, fontSize: 15, marginTop: 4 },
-  seekHit: { paddingVertical: 14, marginTop: 16 },
-  seekTrack: { height: 4, backgroundColor: colors.surfaceHigh, borderRadius: 2, overflow: 'hidden' },
-  seekFill: { height: 4, backgroundColor: colors.text },
+  seekHit: { height: 28, justifyContent: 'center' },
+  seekTrack: { height: 4, borderRadius: 2, backgroundColor: colors.border, overflow: 'hidden' },
+  seekFill: { height: 4, backgroundColor: colors.accent },
+  thumb: {
+    position: 'absolute',
+    width: 14,
+    height: 14,
+    marginLeft: -7,
+    borderRadius: 7,
+    backgroundColor: colors.text,
+    boxShadow: glow.thumb,
+  },
+  thumbActive: { width: 20, height: 20, marginLeft: -10, borderRadius: 10 },
   times: { flexDirection: 'row', justifyContent: 'space-between' },
-  time: { color: colors.muted, fontSize: 12, fontVariant: ['tabular-nums'] },
-  controls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 20,
-  },
-  playButton: {
+  time: { ...type.bodySm, fontVariant: ['tabular-nums'] },
+  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: space.md },
+  playFab: {
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: colors.text,
+    backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
+    boxShadow: glow.fab,
   },
-  extras: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 24 },
-  extra: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 4 },
-  extraText: { color: colors.muted, fontSize: 13, fontVariant: ['tabular-nums'] },
-  queueRow: { height: QUEUE_ROW, flexDirection: 'row', alignItems: 'center', paddingLeft: 20, paddingRight: 8 },
-  queueButton: { padding: 8 },
+  extras: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: space.lg,
+    padding: 6,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+  },
+  extra: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10 },
+  upNext: { marginTop: space.lg, padding: space.md, borderRadius: radius.lg, backgroundColor: colors.surface, gap: space.sm },
+  upNextHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  upNextRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  queueRow: { height: QUEUE_ROW, flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 20, paddingRight: 8 },
 });

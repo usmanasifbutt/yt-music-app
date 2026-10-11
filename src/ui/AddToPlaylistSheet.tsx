@@ -19,7 +19,7 @@ export function AddToPlaylistSheet({ keys, onClose }: { keys: string[] | null; o
     <>
       <Sheet visible={!!keys && !naming} title="Add to playlist" subtitle={what} onClose={onClose}>
         <SheetItem icon="playlist-add" label="New playlist" onPress={() => setNaming(true)} />
-        <ScrollView>
+        <ScrollView style={{ flexShrink: 1 }}>
           {playlists.map((p) => (
             <SheetItem
               key={p.id}

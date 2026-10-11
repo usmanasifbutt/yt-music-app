@@ -43,7 +43,7 @@ function VideoScreen({ track, onClose }: { track: Track; onClose: () => void }) 
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  videoWrap: { marginTop: 16, backgroundColor: '#000' },
+  videoWrap: { marginTop: 16, backgroundColor: colors.videoLetterbox },
   video: { width: '100%', aspectRatio: 16 / 9 },
   title: { color: colors.text, fontSize: 18, fontWeight: '700', paddingHorizontal: 16, marginTop: 16 },
   artist: { color: colors.muted, fontSize: 14, paddingHorizontal: 16, marginTop: 4 },

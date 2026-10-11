@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, BackHandler, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import YtDlp from '../../modules/yt-dlp';
-import { cancelDownload, downloadsStore, nativeErrorMessage, retryDownload } from '../downloads';
+import { cancelDownload, DownloadState, downloadsStore, retryDownload } from '../downloads';
 import { libraryStore, Track } from '../library';
 import {
   applyView,
@@ -12,28 +11,27 @@ import {
   setSort,
   SORT_OPTIONS,
   sortStore,
-  STALE_DAYS,
-  staleTracks,
   totalSize,
 } from '../libraryView';
 import { playerStore, playList } from '../player';
 import { playlistsStore } from '../playlists';
 import { useStore } from '../store';
 import { AddToPlaylistSheet } from './AddToPlaylistSheet';
-import { PlaylistDetail, PlaylistsList } from './PlaylistScreens';
 import { Icon } from './Icon';
-import { runRestore } from './restoreFlow';
+import { Artwork, Badge, Button, Chip, ChipRow, EmptyState, IconButton, ProgressBar } from './kit';
+import { PlaylistDetail, PlaylistsList } from './PlaylistScreens';
 import { Sheet, SheetItem } from './Sheet';
-import { colors, common } from './theme';
+import { colors, LIST_BOTTOM, radius, space, type } from './theme';
 import { confirmDeleteTracks, TrackMenu } from './TrackMenu';
 import { TrackRow } from './TrackRow';
 import { VideoPlayerModal } from './VideoPlayer';
 
-type Segment = 'songs' | 'videos' | 'playlists';
+type Segment = 'songs' | 'videos' | 'playlists' | 'downloads';
 
-export function LibraryScreen() {
+export function LibraryScreen({ onGoSearch }: { onGoSearch: () => void }) {
   const [segment, setSegment] = useState<Segment>('songs');
   const [openPlaylist, setOpenPlaylist] = useState<number | null>(null);
+  const downloads = Object.values(useStore(downloadsStore));
 
   // Android back closes an open playlist instead of leaving the app.
   useEffect(() => {
@@ -51,25 +49,30 @@ export function LibraryScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={styles.segments}>
-        {(['songs', 'videos', 'playlists'] as const).map((s) => (
-          <Pressable key={s} onPress={() => setSegment(s)} style={[styles.chip, segment === s && styles.chipActive]}>
-            <Text style={[styles.chipText, segment === s && styles.chipTextActive]}>
-              {s === 'songs' ? 'Songs' : s === 'videos' ? 'Videos' : 'Playlists'}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      <ChipRow style={{ paddingBottom: space.sm }}>
+        <Chip label="Songs" icon="music-note" active={segment === 'songs'} onPress={() => setSegment('songs')} />
+        <Chip label="Videos" icon="smart-display" active={segment === 'videos'} onPress={() => setSegment('videos')} />
+        <Chip label="Playlists" icon="queue-music" active={segment === 'playlists'} onPress={() => setSegment('playlists')} />
+        <Chip
+          label="Downloads"
+          icon="file-download"
+          count={downloads.length}
+          active={segment === 'downloads'}
+          onPress={() => setSegment('downloads')}
+        />
+      </ChipRow>
       {segment === 'playlists' ? (
         <PlaylistsList onOpen={setOpenPlaylist} />
+      ) : segment === 'downloads' ? (
+        <DownloadsList downloads={downloads} onGoSearch={onGoSearch} />
       ) : (
-        <TrackList key={segment} kind={segment === 'songs' ? 'audio' : 'video'} />
+        <TrackList key={segment} kind={segment === 'songs' ? 'audio' : 'video'} onGoSearch={onGoSearch} />
       )}
     </View>
   );
 }
 
-function TrackList({ kind }: { kind: 'audio' | 'video' }) {
+function TrackList({ kind, onGoSearch }: { kind: 'audio' | 'video'; onGoSearch: () => void }) {
   const library = useStore(libraryStore);
   const playlists = useStore(playlistsStore);
   const sort = useStore(sortStore);
@@ -78,7 +81,6 @@ function TrackList({ kind }: { kind: 'audio' | 'video' }) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<FilterKey>('all');
   const [sortOpen, setSortOpen] = useState(false);
-  const [storageOpen, setStorageOpen] = useState(false);
   const [selection, setSelection] = useState<Set<string> | null>(null);
   const [menuTrack, setMenuTrack] = useState<Track | null>(null);
   const [addKeys, setAddKeys] = useState<string[] | null>(null);
@@ -87,10 +89,8 @@ function TrackList({ kind }: { kind: 'audio' | 'video' }) {
   useEffect(loadSort, []);
 
   const all = useMemo(() => library.filter((t) => t.kind === kind), [library, kind]);
-  const shown = useMemo(
-    () => applyView(all, { sort, filter, query }, playlists),
-    [all, sort, filter, query, playlists]
-  );
+  const shown = useMemo(() => applyView(all, { sort, filter, query }, playlists), [all, sort, filter, query, playlists]);
+  const source = kind === 'audio' ? 'Songs' : 'Videos';
 
   useEffect(() => {
     if (!selection) return;
@@ -113,89 +113,90 @@ function TrackList({ kind }: { kind: 'audio' | 'video' }) {
   function open(track: Track, i: number) {
     if (selection) return toggle(track.key);
     if (track.kind === 'video') setVideo(track);
-    else playList(shown, i); // the queue follows the current sort/filter
+    else playList(shown, i, { source }); // the queue follows the current sort/filter
+  }
+
+  if (!all.length) {
+    return (
+      <EmptyState
+        icon={kind === 'audio' ? 'library-music' : 'smart-display'}
+        title={kind === 'audio' ? 'No songs yet' : 'No videos yet'}
+        text={
+          kind === 'audio'
+            ? 'Search for songs or paste a YouTube link to start building your offline collection.'
+            : 'In Search, tap the download button and pick a video quality.'
+        }>
+        <Button label="Search for music" icon="search" onPress={onGoSearch} />
+      </EmptyState>
+    );
   }
 
   const selected = shown.filter((t) => selection?.has(t.key));
-  const sortLabel = SORT_OPTIONS.find((o) => o.key === sort)?.label;
+  const sortLabel = filter === 'recent' ? 'Last played' : SORT_OPTIONS.find((o) => o.key === sort)?.label;
   const noun = kind === 'audio' ? 'songs' : 'videos';
 
   return (
     <>
       {selection ? (
         <View style={styles.selectionBar}>
-          <Pressable style={common.iconButton} onPress={() => setSelection(null)}>
-            <Icon name="close" />
-          </Pressable>
-          <Text style={styles.selectionCount}>{selection.size} selected</Text>
-          <Pressable
-            style={styles.pill}
-            onPress={() => setSelection(selection.size === shown.length ? null : new Set(shown.map((t) => t.key)))}>
-            <Text style={styles.pillText}>{selection.size === shown.length ? 'None' : 'All'}</Text>
-          </Pressable>
-          <Pressable style={styles.pill} onPress={() => setAddKeys([...selection])}>
-            <Text style={styles.pillText}>+ Playlist</Text>
-          </Pressable>
-          <Pressable style={styles.pill} onPress={() => confirmDeleteTracks(selected, () => setSelection(null))}>
-            <Text style={[styles.pillText, { color: colors.accent }]}>Delete</Text>
-          </Pressable>
+          <IconButton name="close" onPress={() => setSelection(null)} />
+          <Text style={[type.headlineSm, { flex: 1 }]}>{selection.size} selected</Text>
+          <Button
+            label={selection.size === shown.length ? 'Select none' : 'Select all'}
+            variant="secondary"
+            onPress={() => setSelection(selection.size === shown.length ? null : new Set(shown.map((t) => t.key)))}
+          />
         </View>
       ) : (
-        all.length > 0 && (
-          <View>
-            <View style={styles.toolbar}>
-              <TextInput
-                style={styles.search}
-                placeholder={`Search ${noun}`}
-                placeholderTextColor={colors.muted}
-                value={query}
-                onChangeText={setQuery}
-                autoCorrect={false}
-                returnKeyType="search"
-              />
-              <Pressable
-                style={[styles.pill, filter === 'recent' && { opacity: 0.5 }]}
-                disabled={filter === 'recent'}
-                onPress={() => setSortOpen(true)}>
-                <Text style={styles.pillText}>⇅ {filter === 'recent' ? 'Last played' : sortLabel}</Text>
-              </Pressable>
-            </View>
-            <View style={styles.filters}>
-              {FILTER_OPTIONS.map((f) => (
-                <Pressable
-                  key={f.key}
-                  onPress={() => setFilter(f.key)}
-                  style={[styles.filterChip, filter === f.key && styles.filterChipActive]}>
-                  <Text style={[styles.filterText, filter === f.key && styles.filterTextActive]}>{f.label}</Text>
-                </Pressable>
-              ))}
-            </View>
+        <>
+          <View style={styles.search}>
+            <Icon name="search" size={20} color={colors.muted} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder={`Filter your ${noun}`}
+              placeholderTextColor={colors.muted}
+              value={query}
+              onChangeText={setQuery}
+              autoCorrect={false}
+            />
+            {query ? <IconButton name="close" size={18} color={colors.muted} onPress={() => setQuery('')} /> : null}
           </View>
-        )
+          <ChipRow style={{ paddingTop: space.sm }}>
+            <Chip label={sortLabel ?? ''} icon="swap-vert" onPress={() => filter !== 'recent' && setSortOpen(true)} />
+            {FILTER_OPTIONS.map((f) => (
+              <Chip key={f.key} label={f.label} active={filter === f.key} onPress={() => setFilter(f.key)} />
+            ))}
+          </ChipRow>
+        </>
       )}
+
       <FlatList
         data={shown}
         keyExtractor={(t) => t.key}
         keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingBottom: selection ? 120 : LIST_BOTTOM }}
         ListHeaderComponent={
           selection ? null : (
-            <LibraryHeader
-              kind={kind}
-              shown={shown}
-              total={all.length}
-              onStorage={() => setStorageOpen(true)}
-            />
+            <View style={styles.summary}>
+              <View style={{ flex: 1 }}>
+                <Text style={type.headlineSm}>
+                  {shown.length === all.length ? `${all.length} ${noun}` : `${shown.length} of ${all.length}`}
+                </Text>
+                <View style={styles.offline}>
+                  <Icon name="offline-pin" size={14} color={colors.success} />
+                  <Text style={[type.bodySm, { color: colors.success }]}>{formatBytes(totalSize(shown))} offline</Text>
+                </View>
+              </View>
+              {kind === 'audio' && shown.length > 0 && (
+                <>
+                  <Button label="Play all" icon="play-arrow" onPress={() => playList(shown, 0, { shuffle: false, source })} />
+                  <IconButton name="shuffle" filled onPress={() => playList(shown, 0, { shuffle: true, source })} />
+                </>
+              )}
+            </View>
           )
         }
-        ListEmptyComponent={
-          <Text style={common.empty}>
-            {all.length === 0
-              ? kind === 'audio'
-                ? 'No songs yet. Find something in Search and tap ⬇.'
-                : 'No videos yet. In Search, tap ⬇ and pick a video quality.'
-              : `No ${noun} match.`}
-          </Text>
-        }
+        ListEmptyComponent={<Text style={styles.noMatch}>No {noun} match.</Text>}
         renderItem={({ item, index: i }) => (
           <TrackRow
             track={item}
@@ -207,6 +208,29 @@ function TrackList({ kind }: { kind: 'audio' | 'video' }) {
           />
         )}
       />
+
+      {selection && (
+        <View style={styles.actionBar}>
+          <ActionButton icon="playlist-add" label="Add to playlist" onPress={() => setAddKeys([...selection])} />
+          {kind === 'audio' && (
+            <ActionButton
+              icon="play-arrow"
+              label={`Play (${selected.length})`}
+              primary
+              onPress={() => {
+                playList(selected, 0, { shuffle: false, source });
+                setSelection(null);
+              }}
+            />
+          )}
+          <ActionButton
+            icon="delete"
+            label={`Delete (${selected.length})`}
+            danger
+            onPress={() => confirmDeleteTracks(selected, () => setSelection(null))}
+          />
+        </View>
+      )}
 
       <Sheet visible={sortOpen} title="Sort by" onClose={() => setSortOpen(false)}>
         {SORT_OPTIONS.map((o) => (
@@ -221,12 +245,7 @@ function TrackList({ kind }: { kind: 'audio' | 'video' }) {
           />
         ))}
       </Sheet>
-      <StorageSheet visible={storageOpen} onClose={() => setStorageOpen(false)} />
-      <TrackMenu
-        track={menuTrack}
-        onClose={() => setMenuTrack(null)}
-        onAddToPlaylist={(t) => setAddKeys([t.key])}
-      />
+      <TrackMenu track={menuTrack} onClose={() => setMenuTrack(null)} onAddToPlaylist={(t) => setAddKeys([t.key])} />
       <AddToPlaylistSheet
         keys={addKeys}
         onClose={() => {
@@ -239,191 +258,130 @@ function TrackList({ kind }: { kind: 'audio' | 'video' }) {
   );
 }
 
-function StorageSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const library = useStore(libraryStore);
-  const audio = library.filter((t) => t.kind === 'audio');
-  const videos = library.filter((t) => t.kind === 'video');
-  const stale = staleTracks(library);
-
+function ActionButton({
+  icon,
+  label,
+  primary,
+  danger,
+  onPress,
+}: {
+  icon: React.ComponentProps<typeof Icon>['name'];
+  label: string;
+  primary?: boolean;
+  danger?: boolean;
+  onPress: () => void;
+}) {
+  const color = primary ? colors.onAccent : danger ? colors.accent : colors.text;
   return (
-    <Sheet
-      visible={visible}
-      title={`Storage · ${formatBytes(totalSize(library))}`}
-      subtitle="Downloads in Music/YT Music and Movies/YT Music"
-      onClose={onClose}>
-      <SheetItem icon="music-note" label={`${audio.length} songs`} detail={formatBytes(totalSize(audio))} onPress={() => {}} />
-      <SheetItem icon="movie" label={`${videos.length} videos`} detail={formatBytes(totalSize(videos))} onPress={() => {}} />
-      <SheetItem
-        icon="delete-sweep"
-        destructive
-        disabled={!stale.length}
-        label={stale.length ? `Delete ${stale.length} not played in ${STALE_DAYS}+ days` : `Nothing unplayed for ${STALE_DAYS}+ days`}
-        detail={stale.length ? formatBytes(totalSize(stale)) : undefined}
-        onPress={() => {
-          onClose();
-          confirmDeleteTracks(stale);
-        }}
-      />
-      <SheetItem
-        icon="restore"
-        label="Restore from device folders"
-        detail="After reinstall"
-        onPress={() => {
-          onClose();
-          void runRestore();
-        }}
-      />
-    </Sheet>
+    <Pressable onPress={onPress} style={[styles.action, primary && { backgroundColor: colors.accent }]}>
+      <Icon name={icon} size={22} color={color} />
+      <Text style={[type.labelMd, { color }]}>{label}</Text>
+    </Pressable>
   );
 }
 
-function LibraryHeader({
-  kind,
-  shown,
-  total,
-  onStorage,
-}: {
-  kind: 'audio' | 'video';
-  shown: Track[];
-  total: number;
-  onStorage: () => void;
-}) {
-  const downloads = Object.values(useStore(downloadsStore)).filter((d) => d.kind === kind);
-  const [updating, setUpdating] = useState(false);
-  const noun = kind === 'audio' ? (total === 1 ? 'song' : 'songs') : total === 1 ? 'video' : 'videos';
-
-  async function updateEngine() {
-    setUpdating(true);
-    try {
-      const status = await YtDlp.update();
-      const version = await YtDlp.version();
-      Alert.alert(
-        'Download engine',
-        status === 'ALREADY_UP_TO_DATE' ? `Already up to date (${version})` : `Updated to ${version}`
-      );
-    } catch (e: any) {
-      Alert.alert('Update failed', nativeErrorMessage(e));
-    } finally {
-      setUpdating(false);
-    }
+function DownloadsList({ downloads, onGoSearch }: { downloads: DownloadState[]; onGoSearch: () => void }) {
+  if (!downloads.length) {
+    return (
+      <EmptyState icon="download-done" title="No downloads in progress" text="Everything you download shows up here until it's saved to your library.">
+        <Button label="Search for music" icon="search" onPress={onGoSearch} />
+      </EmptyState>
+    );
   }
-
+  const active = downloads.filter((d) => d.status === 'downloading');
+  const waiting = downloads.filter((d) => d.status !== 'downloading');
   return (
-    <View>
-      <View style={styles.header}>
-        <Pressable onPress={onStorage} hitSlop={8}>
-          <Text style={styles.count}>
-            {shown.length === total ? `${total} ${noun}` : `${shown.length} of ${total} ${noun}`} ·{' '}
-            {formatBytes(totalSize(shown))} ›
-          </Text>
-        </Pressable>
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Pressable style={styles.pill} onPress={updateEngine} disabled={updating}>
-            <Text style={styles.pillText}>{updating ? 'Updating…' : 'Update engine'}</Text>
-          </Pressable>
-          {kind === 'audio' && shown.length > 0 && (
-            <Pressable style={[styles.pill, { backgroundColor: colors.accent }]} onPress={() => playList(shown, 0)}>
-              <Text style={[styles.pillText, { color: '#fff' }]}>▶ Play</Text>
-            </Pressable>
-          )}
-        </View>
-      </View>
-      {downloads.map((d) => (
-        <View key={d.key} style={common.row}>
-          <Pressable
-            style={{ flex: 1 }}
-            disabled={d.status !== 'error'}
-            onPress={() => Alert.alert('Download failed', d.error)}>
-            <Text style={common.title} numberOfLines={1}>
-              {d.item.title}
-            </Text>
-            <Text style={[common.subtitle, d.status === 'error' && { color: colors.accent }]} numberOfLines={2}>
-              {d.kind === 'audio' ? 'Audio' : `Video ${d.height}p`} ·{' '}
-              {d.status === 'error'
-                ? d.error
-                : d.status === 'queued'
-                  ? 'Waiting…'
-                  : `Downloading ${Math.round(d.progress)}%`}
-            </Text>
-            {d.status === 'downloading' && (
-              <View style={styles.barTrack}>
-                <View style={[styles.barFill, { width: `${Math.max(2, d.progress)}%` }]} />
+    <FlatList
+      data={[...active, ...waiting]}
+      keyExtractor={(d) => d.key}
+      contentContainerStyle={{ paddingBottom: LIST_BOTTOM, gap: space.sm, paddingHorizontal: space.md }}
+      renderItem={({ item: d }) => (
+        <Pressable
+          style={styles.download}
+          disabled={d.status !== 'error'}
+          onPress={() => Alert.alert('Download failed', d.error)}>
+          <View style={styles.downloadTop}>
+            <Artwork uris={[d.item.thumbnail]} size={48} />
+            <View style={{ flex: 1 }}>
+              <Text style={type.bodyLg} numberOfLines={1}>
+                {d.item.title}
+              </Text>
+              <View style={styles.offline}>
+                <Text style={type.bodySm} numberOfLines={1}>
+                  {d.item.artist}
+                </Text>
+                <Badge label={d.kind === 'audio' ? 'Audio' : `Video ${d.height}p`} />
               </View>
-            )}
-            {d.status === 'error' && <Text style={styles.hint}>Tap for details</Text>}
-          </Pressable>
-          {d.status === 'error' && (
-            <Pressable style={common.iconButton} onPress={() => retryDownload(d.key)}>
-              <Icon name="refresh" />
-            </Pressable>
+            </View>
+            {d.status === 'error' && <IconButton name="refresh" color={colors.accent} filled onPress={() => retryDownload(d.key)} />}
+            <IconButton name="close" color={colors.muted} filled onPress={() => cancelDownload(d.key)} />
+          </View>
+          {d.status === 'downloading' ? (
+            <>
+              <ProgressBar value={d.progress} />
+              <Text style={type.bodySm}>{Math.round(d.progress)}%</Text>
+            </>
+          ) : (
+            <Text style={[type.bodySm, d.status === 'error' && { color: colors.accent }]} numberOfLines={2}>
+              {d.status === 'error' ? `${d.error} · tap for details` : 'Waiting…'}
+            </Text>
           )}
-          <Pressable style={common.iconButton} onPress={() => cancelDownload(d.key)}>
-            <Icon name="close" color={colors.muted} />
-          </Pressable>
-        </View>
-      ))}
-    </View>
+        </Pressable>
+      )}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  segments: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 6 },
-  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16, backgroundColor: colors.surface },
-  chipActive: { backgroundColor: colors.text },
-  chipText: { color: colors.text, fontSize: 13 },
-  chipTextActive: { color: colors.bg, fontWeight: '700' },
-  toolbar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingTop: 4 },
   search: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    color: colors.text,
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    fontSize: 14,
-  },
-  filters: { flexDirection: 'row', gap: 6, paddingHorizontal: 16, paddingTop: 8 },
-  filterChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  filterChipActive: { borderColor: colors.accent, backgroundColor: 'rgba(255,78,69,0.15)' },
-  filterText: { color: colors.muted, fontSize: 12 },
-  filterTextActive: { color: colors.text, fontWeight: '600' },
-  header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  count: { color: colors.muted, fontSize: 13 },
-  pill: {
+    gap: space.sm,
+    marginHorizontal: space.md,
+    paddingLeft: 14,
+    paddingRight: 4,
+    height: 44,
+    borderRadius: radius.pill,
     backgroundColor: colors.surface,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 18,
   },
-  pillText: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  searchInput: { flex: 1, color: colors.text, fontSize: 15, paddingVertical: 0 },
+  summary: { flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.md },
+  offline: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
+  noMatch: { ...type.bodyMd, textAlign: 'center', marginTop: space.xl },
   selectionBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingRight: 12,
-    paddingVertical: 4,
+    gap: space.sm,
+    paddingHorizontal: space.sm,
+    paddingVertical: 6,
+    backgroundColor: colors.surface,
+  },
+  actionBar: {
+    position: 'absolute',
+    left: space.md,
+    right: space.md,
+    bottom: space.sm,
+    flexDirection: 'row',
+    gap: space.sm,
+    padding: space.sm,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  action: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 10,
+    borderRadius: radius.md,
     backgroundColor: colors.surfaceHigh,
   },
-  selectionCount: { color: colors.text, fontSize: 15, fontWeight: '600', flex: 1 },
-  barTrack: {
-    height: 3,
-    backgroundColor: colors.surfaceHigh,
-    borderRadius: 2,
-    marginTop: 6,
-    overflow: 'hidden',
+  download: {
+    gap: space.sm,
+    padding: 12,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
   },
-  barFill: { height: 3, backgroundColor: colors.accent },
-  hint: { color: colors.muted, fontSize: 11, marginTop: 2 },
+  downloadTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
 });

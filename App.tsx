@@ -1,48 +1,46 @@
-import * as Application from 'expo-application';
-import Constants from 'expo-constants';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import YtDlp from './modules/yt-dlp';
+import { VERSION_LABEL } from './src/appInfo';
 import { downloadsStore, nativeErrorMessage } from './src/downloads';
+import { loadInterests } from './src/interests';
 import { loadLibrary, markUpdated, shouldAutoUpdate } from './src/library';
 import { setupPlayer } from './src/player';
 import { loadPlaylists, syncAllM3u, tracksMissing } from './src/playlists';
-import { offerRestoreOnFreshInstall } from './src/ui/restoreFlow';
+import { loadSettings, settingsStore } from './src/settings';
 import { useStore } from './src/store';
-import { LibraryScreen } from './src/ui/LibraryScreen';
-import { MiniPlayer } from './src/ui/Player';
-import { SearchScreen } from './src/ui/SearchScreen';
-import { loadInterests } from './src/interests';
 import { HomeScreen } from './src/ui/HomeScreen';
 import { Icon, IconName } from './src/ui/Icon';
-import { colors } from './src/ui/theme';
+import { LegalNotice } from './src/ui/LegalNotice';
+import { LibraryScreen } from './src/ui/LibraryScreen';
+import { MiniPlayer } from './src/ui/Player';
+import { offerRestoreOnFreshInstall } from './src/ui/restoreFlow';
+import { SearchScreen } from './src/ui/SearchScreen';
+import { SettingsScreen } from './src/ui/SettingsScreen';
+import { colors, type } from './src/ui/theme';
 
-type Tab = 'home' | 'search' | 'library';
+type Tab = 'home' | 'search' | 'library' | 'settings';
 
 const TABS: { key: Tab; label: string; icon: IconName }[] = [
   { key: 'home', label: 'Home', icon: 'home' },
   { key: 'search', label: 'Search', icon: 'search' },
   { key: 'library', label: 'Library', icon: 'library-music' },
+  { key: 'settings', label: 'Settings', icon: 'tune' },
 ];
 
-// Before the first render, so the interest picker only appears when nothing was saved yet.
+// Before the first render, so first-launch screens only appear when nothing was saved yet.
+loadSettings();
 loadInterests();
 
-// e.g. "v1.3.0 (5)" or "v1.3.0-dev.ea3c35e (6) Beta", read from the installed APK. The build
-// number is assigned by EAS at build time, so it isn't in app.json.
-const APP_VERSION = [
-  `v${Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? '?'}`,
-  `(${Application.nativeBuildVersion ?? '?'})`,
-  Constants.expoConfig?.name?.endsWith('Beta') ? 'Beta' : '',
-]
-  .filter(Boolean)
-  .join(' ');
+export type EngineState = 'loading' | 'updating' | 'ready' | { error: string };
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('home');
-  const [engine, setEngine] = useState<'loading' | 'updating' | 'ready' | string>('loading');
+  const [engine, setEngine] = useState<EngineState>('loading');
+  const [libraryLoaded, setLibraryLoaded] = useState(false);
+  const { consentAccepted } = useStore(settingsStore);
   const activeDownloads = Object.keys(useStore(downloadsStore)).length;
 
   useEffect(() => {
@@ -51,63 +49,99 @@ export default function App() {
       tracksMissing(missing);
       // Recreate any .m3u files deleted outside the app, and keep the library index current.
       syncAllM3u();
-      offerRestoreOnFreshInstall();
+      setLibraryLoaded(true);
     });
     setupPlayer();
     // First launch unpacks python + ffmpeg; do it up front so the first search is fast.
     // The yt-dlp bundled in the APK goes stale as YouTube changes, so refresh it daily.
     YtDlp.init()
       .then(async () => {
-        if (shouldAutoUpdate()) {
+        if (settingsStore.get().autoUpdate && shouldAutoUpdate()) {
           setEngine('updating');
           try {
             await YtDlp.update();
             markUpdated();
           } catch {
-            // Offline or GitHub unreachable: keep using the current engine.
+            // No internet or GitHub unreachable: keep using the current engine.
           }
         }
         setEngine('ready');
       })
-      .catch((e) => setEngine(nativeErrorMessage(e)));
+      .catch((e) => setEngine({ error: nativeErrorMessage(e) }));
   }, []);
+
+  // After the notice is accepted, a fresh install offers to restore from the music folders.
+  useEffect(() => {
+    if (consentAccepted && libraryLoaded) offerRestoreOnFreshInstall();
+  }, [consentAccepted, libraryLoaded]);
+
+  if (!consentAccepted) {
+    return (
+      <SafeAreaProvider>
+        <StatusBar style="light" />
+        <LegalNotice />
+      </SafeAreaProvider>
+    );
+  }
+
+  const current = TABS.find((t) => t.key === tab)!;
 
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
         <StatusBar style="light" />
-        <View style={styles.headingRow}>
-          <Text style={styles.heading}>{TABS.find((t) => t.key === tab)!.label}</Text>
-          <Text style={styles.version}>{APP_VERSION}</Text>
+        <View style={styles.header}>
+          <Text style={type.headlineLg}>{current.label}</Text>
+          {tab === 'home' && (
+            <View style={styles.versionPill}>
+              <Text style={[type.labelMd, { color: colors.muted }]}>{VERSION_LABEL}</Text>
+            </View>
+          )}
         </View>
-        {engine !== 'ready' && (
+        {engine !== 'ready' && tab !== 'settings' && (
           <View style={styles.banner}>
-            {engine === 'loading' || engine === 'updating' ? (
+            {typeof engine === 'object' ? (
+              <Text style={[type.bodySm, { color: colors.accent }]}>{engine.error}</Text>
+            ) : (
               <>
                 <ActivityIndicator color={colors.muted} size="small" />
-                <Text style={styles.bannerText}>
+                <Text style={type.bodySm}>
                   {engine === 'loading' ? 'Preparing download engine…' : 'Updating download engine…'}
                 </Text>
               </>
-            ) : (
-              <Text style={[styles.bannerText, { color: colors.accent }]}>{engine}</Text>
             )}
           </View>
         )}
         <View style={{ flex: 1 }}>
-          {tab === 'home' ? <HomeScreen /> : tab === 'search' ? <SearchScreen /> : <LibraryScreen />}
+          {tab === 'home' ? (
+            <HomeScreen />
+          ) : tab === 'search' ? (
+            <SearchScreen />
+          ) : tab === 'library' ? (
+            <LibraryScreen onGoSearch={() => setTab('search')} />
+          ) : (
+            <SettingsScreen engine={engine} />
+          )}
         </View>
         <MiniPlayer />
         <View style={styles.tabs}>
-          {TABS.map((t) => (
-            <Pressable key={t.key} style={styles.tab} onPress={() => setTab(t.key)}>
-              <Icon name={t.icon} size={24} color={tab === t.key ? colors.text : colors.muted} />
-              <Text style={[styles.tabLabel, tab === t.key && styles.tabActive]}>
-                {t.label}
-                {t.key === 'library' && activeDownloads > 0 ? ` (${activeDownloads})` : ''}
-              </Text>
-            </Pressable>
-          ))}
+          {TABS.map((t) => {
+            const active = tab === t.key;
+            const color = active ? colors.accent : colors.muted;
+            return (
+              <Pressable key={t.key} style={styles.tab} onPress={() => setTab(t.key)}>
+                <View>
+                  <Icon name={t.icon} size={24} color={color} />
+                  {t.key === 'library' && activeDownloads > 0 && (
+                    <View style={styles.tabBadge}>
+                      <Text style={[type.labelSm, { color: colors.bg }]}>{activeDownloads}</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={[type.labelMd, { color }]}>{t.label}</Text>
+              </Pressable>
+            );
+          })}
         </View>
       </SafeAreaView>
     </SafeAreaProvider>
@@ -116,26 +150,41 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  headingRow: {
+  header: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 4,
+    paddingBottom: 8,
   },
-  heading: { color: colors.text, fontSize: 28, fontWeight: '800' },
-  version: { color: colors.muted, fontSize: 12 },
-  banner: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingHorizontal: 16, paddingVertical: 6 },
-  bannerText: { color: colors.muted, fontSize: 13 },
+  versionPill: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  banner: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingHorizontal: 16, paddingBottom: 6 },
   tabs: {
     flexDirection: 'row',
+    height: 64,
     backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  tab: { flex: 1, alignItems: 'center', paddingVertical: 8 },
-  tabIcon: { color: colors.muted, fontSize: 20 },
-  tabLabel: { color: colors.muted, fontSize: 12, marginTop: 2 },
-  tabActive: { color: colors.text },
+  tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2 },
+  tabBadge: {
+    position: 'absolute',
+    right: -10,
+    top: -4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 3,
+    backgroundColor: colors.success,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

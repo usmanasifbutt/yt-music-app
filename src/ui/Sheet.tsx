@@ -2,16 +2,19 @@ import { ReactNode, useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon, IconName } from './Icon';
-import { colors } from './theme';
+import { colors, radius, type } from './theme';
 
 export function Sheet({
   visible,
+  eyebrow,
   title,
   subtitle,
   onClose,
   children,
 }: {
   visible: boolean;
+  /** Small green label above the title, e.g. "DOWNLOAD FORMAT". */
+  eyebrow?: string;
   title?: string;
   subtitle?: string;
   onClose: () => void;
@@ -23,12 +26,23 @@ export function Sheet({
     <Modal transparent visible animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} />
       <View style={[styles.sheet, { paddingBottom: insets.bottom + 12 }]}>
-        {title ? (
-          <Text style={styles.title} numberOfLines={2}>
-            {title}
-          </Text>
+        <View style={styles.handle} />
+        {title || eyebrow ? (
+          <View style={styles.header}>
+            <View style={{ flex: 1 }}>
+              {eyebrow ? <Text style={[type.labelMd, { color: colors.success, letterSpacing: 0.8 }]}>{eyebrow.toUpperCase()}</Text> : null}
+              {title ? (
+                <Text style={type.headlineMd} numberOfLines={2}>
+                  {title}
+                </Text>
+              ) : null}
+              {subtitle ? <Text style={[type.bodyMd, { marginTop: 2 }]}>{subtitle}</Text> : null}
+            </View>
+            <Pressable style={styles.close} onPress={onClose} hitSlop={8}>
+              <Icon name="close" size={20} color={colors.text} />
+            </Pressable>
+          </View>
         ) : null}
-        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         {children}
       </View>
     </Modal>
@@ -120,23 +134,33 @@ export function NameDialog({
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
+  backdrop: { flex: 1, backgroundColor: colors.scrim },
   sheet: {
     backgroundColor: colors.surface,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingTop: 16,
-    maxHeight: '75%',
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    borderTopWidth: 1,
+    borderColor: colors.border,
+    paddingTop: 8,
+    maxHeight: '80%',
   },
-  title: { color: colors.text, fontSize: 16, fontWeight: '700', paddingHorizontal: 20 },
-  subtitle: { color: colors.muted, fontSize: 13, paddingHorizontal: 20, marginTop: 4 },
+  handle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: 12 },
+  header: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 20, paddingBottom: 8 },
+  close: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.surfaceHigh,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   item: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 14 },
   icon: { width: 24, alignItems: 'center' },
   label: { fontSize: 15, flex: 1 },
   detail: { color: colors.muted, fontSize: 13 },
   dialogBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: colors.scrim,
     justifyContent: 'center',
     paddingHorizontal: 24,
   },

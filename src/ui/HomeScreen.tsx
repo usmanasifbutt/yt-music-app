@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SearchResult } from '../../modules/yt-dlp';
 import { homeStore, OnlineRow, refreshHome } from '../home';
 import { interestsStore } from '../interests';
@@ -8,12 +8,14 @@ import { playerStore, playList } from '../player';
 import { playlistsStore, playlistTracks } from '../playlists';
 import { useStore } from '../store';
 import { DownloadSheet } from './DownloadSheet';
-import { Icon } from './Icon';
 import { InterestPicker } from './InterestPicker';
-import { colors, common, formatTime } from './theme';
+import { Artwork, Badge, Button, EmptyState, SavedDot } from './kit';
+import { colors, formatTime, LIST_BOTTOM, radius, space, type } from './theme';
 import { VideoPlayerModal } from './VideoPlayer';
 
 const LOCAL_ROW = 10;
+const SQUARE = 128;
+const WIDE = 168;
 
 export function HomeScreen() {
   const interests = useStore(interestsStore);
@@ -72,14 +74,16 @@ export function HomeScreen() {
   return (
     <>
       <ScrollView
-        contentContainerStyle={{ paddingBottom: 24 }}
+        contentContainerStyle={{ paddingBottom: LIST_BOTTOM }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} colors={[colors.accent]} />}>
         <View style={styles.topBar}>
-          <Text style={styles.hint}>{interests?.length ? 'Picked for you' : 'Pick interests to fill Home'}</Text>
-          <Pressable style={styles.editButton} onPress={() => setPickerOpen(true)} hitSlop={8}>
-            <Icon name="tune" size={18} color={colors.text} />
-            <Text style={styles.editText}>Interests</Text>
-          </Pressable>
+          <View style={styles.hintRow}>
+            <View style={styles.dot} />
+            <Text style={[type.labelMd, { color: colors.muted, letterSpacing: 0.8 }]}>
+              {interests?.length ? 'PICKED FOR YOU' : 'PICK INTERESTS TO FILL HOME'}
+            </Text>
+          </View>
+          <Button label="Interests" icon="tune" variant="secondary" onPress={() => setPickerOpen(true)} />
         </View>
 
         {recentlyPlayed.length > 0 && (
@@ -108,29 +112,33 @@ export function HomeScreen() {
               keyExtractor={(p) => String(p.playlist.id)}
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.rowContent}
-              renderItem={({ item }) => {
-                const cover = item.tracks.find((t) => t.thumbnailPath)?.thumbnailPath;
-                return (
-                  <Pressable style={styles.squareCard} onPress={() => playList(item.tracks, 0)}>
-                    {cover ? <Image source={{ uri: cover }} style={styles.square} /> : <View style={styles.square} />}
-                    <Text style={styles.cardTitle} numberOfLines={1}>
-                      {item.playlist.name}
-                    </Text>
-                    <Text style={styles.cardSub}>{item.tracks.length} items</Text>
-                  </Pressable>
-                );
-              }}
+              renderItem={({ item }) => (
+                <Pressable
+                  style={styles.squareCard}
+                  onPress={() => playList(item.tracks, 0, { shuffle: false, source: `Playlist · ${item.playlist.name}` })}>
+                  <Artwork uris={item.tracks.slice(0, 4).map((t) => t.thumbnailPath)} size={SQUARE} />
+                  <Text style={styles.cardTitle} numberOfLines={1}>
+                    {item.playlist.name}
+                  </Text>
+                  <Text style={styles.cardSub}>{item.tracks.length} items</Text>
+                </Pressable>
+              )}
             />
           </Section>
         )}
 
-        {nothingAtAll && (
-          <Text style={common.empty}>
-            {interests?.length
-              ? "Couldn't load suggestions. Check your connection and pull down to refresh."
-              : 'Tap Interests to choose what you like, or find something in Search.'}
-          </Text>
-        )}
+        {nothingAtAll &&
+          (interests?.length ? (
+            <EmptyState
+              icon="wifi-off"
+              title="Couldn't load suggestions"
+              text="Check your connection, then pull down to refresh."
+            />
+          ) : (
+            <EmptyState icon="tune" title="Make Home yours" text="Choose what you listen to and Home fills up with it.">
+              <Button label="Choose interests" icon="tune" onPress={() => setPickerOpen(true)} />
+            </EmptyState>
+          ))}
       </ScrollView>
 
       <InterestPicker visible={interests === null || pickerOpen} onClose={() => setPickerOpen(false)} />
@@ -140,14 +148,25 @@ export function HomeScreen() {
   );
 }
 
+const SEED_PREFIXES = ['Because you played ', 'More like '];
+
 function Section({ title, loading, children }: { title: string; loading?: boolean; children: React.ReactNode }) {
+  // "Because you played <song>": the song name is highlighted.
+  const prefix = SEED_PREFIXES.find((p) => title.startsWith(p));
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle} numberOfLines={1}>
-          {title}
+        <Text style={[type.headlineSm, { flexShrink: 1 }]} numberOfLines={1}>
+          {prefix ? (
+            <>
+              {prefix}
+              <Text style={{ color: colors.accent }}>{title.slice(prefix.length)}</Text>
+            </>
+          ) : (
+            title
+          )}
         </Text>
-        {loading && <Icon name="sync" size={16} color={colors.muted} />}
+        {loading && <ActivityIndicator size="small" color={colors.muted} />}
       </View>
       {children}
     </View>
@@ -193,11 +212,7 @@ function OnlineRowView({
             <View>
               <Image source={{ uri: item.thumbnail }} style={styles.wide} />
               {item.duration ? <Text style={styles.duration}>{formatTime(item.duration)}</Text> : null}
-              {saved && (
-                <View style={styles.savedBadge}>
-                  <Icon name="check" size={14} color="#fff" />
-                </View>
-              )}
+              {saved && <SavedDot />}
             </View>
             <Text style={styles.cardTitle} numberOfLines={2}>
               {item.title}
@@ -225,15 +240,13 @@ function LocalRow({ tracks, onOpen }: { tracks: Track[]; onOpen: (t: Track) => v
       renderItem={({ item }) => (
         <Pressable style={styles.squareCard} onPress={() => onOpen(item)}>
           <View>
-            {item.thumbnailPath ? (
-              <Image source={{ uri: item.thumbnailPath }} style={styles.square} />
-            ) : (
-              <View style={styles.square} />
-            )}
-            {item.kind === 'video' && (
-              <View style={styles.savedBadge}>
-                <Icon name="movie" size={14} color="#fff" />
+            <Artwork uris={[item.thumbnailPath]} size={SQUARE} />
+            {item.key === playingKey ? (
+              <View style={styles.playing}>
+                <Badge label="Playing" tone="accent" />
               </View>
+            ) : (
+              <SavedDot icon={item.kind === 'video' ? 'movie' : 'check'} />
             )}
           </View>
           <Text style={[styles.cardTitle, item.key === playingKey && { color: colors.accent }]} numberOfLines={2}>
@@ -253,50 +266,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 4,
-    paddingBottom: 4,
+    paddingHorizontal: space.md,
+    paddingBottom: space.xs,
   },
-  hint: { color: colors.muted, fontSize: 13 },
-  editButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 16,
-  },
-  editText: { color: colors.text, fontSize: 13, fontWeight: '600' },
-  section: { marginTop: 18 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, marginBottom: 10 },
-  sectionTitle: { color: colors.text, fontSize: 18, fontWeight: '700', flexShrink: 1 },
-  rowContent: { paddingHorizontal: 16, gap: 12 },
-  wideCard: { width: 168 },
-  wide: { width: 168, height: 94.5, borderRadius: 8, backgroundColor: colors.surfaceHigh },
-  squareCard: { width: 128 },
-  square: { width: 128, height: 128, borderRadius: 8, backgroundColor: colors.surfaceHigh },
-  cardTitle: { color: colors.text, fontSize: 13, fontWeight: '600', marginTop: 6 },
-  cardSub: { color: colors.muted, fontSize: 12, marginTop: 2 },
+  hintRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accent },
+  section: { marginTop: space.lg },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.md, marginBottom: 12 },
+  rowContent: { paddingHorizontal: space.md, gap: 12 },
+  wideCard: { width: WIDE },
+  wide: { width: WIDE, height: (WIDE * 9) / 16, borderRadius: radius.md, backgroundColor: colors.surfaceHigh },
+  squareCard: { width: SQUARE },
+  cardTitle: { ...type.labelLg, marginTop: space.sm },
+  cardSub: { ...type.bodySm, marginTop: 2 },
+  playing: { position: 'absolute', left: 6, top: 6 },
   duration: {
     position: 'absolute',
     right: 4,
     bottom: 4,
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '600',
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    ...type.labelSm,
+    color: colors.text,
+    backgroundColor: colors.overlay,
     paddingHorizontal: 4,
-    borderRadius: 3,
+    borderRadius: radius.sm,
     overflow: 'hidden',
-  },
-  savedBadge: {
-    position: 'absolute',
-    left: 4,
-    top: 4,
-    backgroundColor: colors.success,
-    borderRadius: 10,
-    padding: 2,
   },
   skeletonLine: { height: 10, borderRadius: 5, backgroundColor: colors.surface, marginTop: 8, width: '85%' },
 });

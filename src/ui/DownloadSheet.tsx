@@ -1,18 +1,13 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  downloadKey,
-  DownloadOption,
-  downloadOptions,
-  SearchResult,
-  VIDEO_HEIGHTS,
-} from '../../modules/yt-dlp';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { downloadKey, DownloadOption, downloadOptions, SearchResult, VIDEO_HEIGHTS } from '../../modules/yt-dlp';
 import { downloadsStore, enqueueDownload, nativeErrorMessage } from '../downloads';
 import { libraryStore } from '../library';
 import { useStore } from '../store';
-import { Icon } from './Icon';
-import { colors } from './theme';
+import { Icon, IconName } from './Icon';
+import { Badge } from './kit';
+import { Sheet } from './Sheet';
+import { colors, formatTime, radius, space, type } from './theme';
 
 // Shown immediately while real sizes load (and if loading them fails).
 const FALLBACK: DownloadOption[] = [
@@ -20,8 +15,17 @@ const FALLBACK: DownloadOption[] = [
   ...VIDEO_HEIGHTS.map((h) => ({ kind: 'video' as const, height: h, label: `Video · ${h}p`, size: null })),
 ];
 
+const DESCRIPTION: Record<number, string> = {
+  0: 'Original audio, no re-encoding',
+  360: 'Data saver',
+  720: 'HD · balanced size',
+  1080: 'Full HD',
+};
+
+const ICON: Record<number, IconName> = { 0: 'music-note', 360: 'sd', 720: 'hd', 1080: 'high-quality' };
+
 function formatSize(bytes: number | null) {
-  if (!bytes) return '';
+  if (!bytes) return null;
   return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `~${Math.max(1, Math.round(bytes / 1e6))} MB`;
 }
 
@@ -31,7 +35,6 @@ export function DownloadSheet({ item, onClose }: { item: SearchResult | null; on
   const [note, setNote] = useState<string | null>(null);
   const library = useStore(libraryStore);
   const downloads = useStore(downloadsStore);
-  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (!item) return;
@@ -51,58 +54,83 @@ export function DownloadSheet({ item, onClose }: { item: SearchResult | null; on
   if (!item) return null;
 
   return (
-    <Modal transparent visible animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
-        <Text style={styles.title} numberOfLines={2}>
-          {item.title}
-        </Text>
-        <Text style={styles.subtitle}>
-          {loading ? 'Checking available formats…' : (note ?? 'Choose what to download')}
-        </Text>
+    <Sheet
+      visible
+      eyebrow="Download format"
+      title={item.title}
+      subtitle={note ?? `${item.artist} · ${formatTime(item.duration)}`}
+      onClose={onClose}>
+      <View style={styles.list}>
         {options.map((o) => {
           const key = downloadKey(item.id, o.kind, o.height);
           const saved = library.some((t) => t.key === key);
-          const inProgress = downloads[key] && downloads[key].status !== 'error';
-          const disabled = saved || !!inProgress;
+          const dl = downloads[key];
+          const busy = dl && dl.status !== 'error';
+          const size = formatSize(o.size);
           return (
             <Pressable
               key={key}
-              disabled={disabled}
-              style={({ pressed }) => [styles.option, pressed && { backgroundColor: colors.surfaceHigh }]}
+              disabled={saved || !!busy}
+              style={({ pressed }) => [styles.option, pressed && { backgroundColor: colors.border }]}
               onPress={() => {
                 enqueueDownload(item, o.kind, o.height);
                 onClose();
               }}>
-              <Icon name={o.kind === 'audio' ? 'music-note' : 'movie'} size={22} color={disabled ? colors.muted : colors.text} />
-              <Text style={[styles.label, disabled && { color: colors.muted }]}>{o.label}</Text>
-              {loading && !o.size ? (
-                <ActivityIndicator size="small" color={colors.muted} />
-              ) : (
-                <Text style={styles.size}>
-                  {saved ? 'Downloaded' : inProgress ? 'Downloading' : formatSize(o.size)}
+              <View style={[styles.optionIcon, o.kind === 'audio' && { backgroundColor: colors.successSoft }]}>
+                <Icon name={ICON[o.height] ?? 'movie'} size={22} color={o.kind === 'audio' ? colors.success : colors.text} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={styles.labelRow}>
+                  <Text style={type.bodyLg}>{o.label}</Text>
+                  {saved ? <Badge label="Downloaded" tone="success" /> : o.height === 720 ? <Badge label="Recommended" tone="accent" /> : null}
+                </View>
+                <Text style={type.bodySm}>
+                  {DESCRIPTION[o.height] ?? ''}
+                  {size ? ` · ${size}` : loading ? ' · checking size…' : ''}
                 </Text>
-              )}
+              </View>
+              <View style={[styles.action, saved && { backgroundColor: colors.success }]}>
+                {saved ? (
+                  <Icon name="check" size={22} color={colors.bg} />
+                ) : busy ? (
+                  <ActivityIndicator size="small" color={colors.success} />
+                ) : (
+                  <Icon name="file-download" size={22} color={colors.text} />
+                )}
+              </View>
             </Pressable>
           );
         })}
       </View>
-    </Modal>
+    </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
-  sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingTop: 20,
+  list: { gap: space.sm, paddingHorizontal: space.md, paddingTop: space.sm },
+  option: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceHigh,
   },
-  title: { color: colors.text, fontSize: 16, fontWeight: '700', paddingHorizontal: 20 },
-  subtitle: { color: colors.muted, fontSize: 13, paddingHorizontal: 20, marginTop: 4, marginBottom: 8 },
-  option: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 14 },
-  icon: { color: colors.text, fontSize: 18, width: 22, textAlign: 'center' },
-  label: { color: colors.text, fontSize: 15, flex: 1 },
-  size: { color: colors.muted, fontSize: 13 },
+  optionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  labelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
+  action: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

@@ -1,7 +1,8 @@
 import { PermissionsAndroid, Platform } from 'react-native';
 import YtDlp, { downloadKey, MediaKind, SearchResult } from '../modules/yt-dlp';
-import { addTrack } from './library';
+import { addTrack, libraryStore } from './library';
 import { trackAdded } from './playlists';
+import { settingsStore } from './settings';
 import { createStore } from './store';
 
 export type DownloadState = {
@@ -14,7 +15,6 @@ export type DownloadState = {
   error?: string;
 };
 
-const MAX_PARALLEL = 2;
 
 export const downloadsStore = createStore<Record<string, DownloadState>>({});
 
@@ -44,7 +44,7 @@ function pump() {
   const all = Object.values(downloadsStore.get());
   let active = all.filter((d) => d.status === 'downloading').length;
   for (const d of all) {
-    if (active >= MAX_PARALLEL) break;
+    if (active >= settingsStore.get().maxParallel) break;
     if (d.status !== 'queued') continue;
     active++;
     run(d);
@@ -91,16 +91,22 @@ function askForNotifications() {
   PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS).catch(() => {});
 }
 
-export function enqueueDownload(item: SearchResult, kind: MediaKind, height = 0) {
-  askForNotifications();
+/**
+ * Queues a download. Returns 'saved' if that exact version is already in the library and
+ * 'busy' if it's already downloading, so nothing gets downloaded twice.
+ */
+export function enqueueDownload(item: SearchResult, kind: MediaKind, height = 0): 'queued' | 'saved' | 'busy' {
   const key = downloadKey(item.id, kind, height);
+  if (libraryStore.get().some((t) => t.key === key)) return 'saved';
   const existing = downloadsStore.get()[key];
-  if (existing && existing.status !== 'error') return;
+  if (existing && existing.status !== 'error') return 'busy';
+  askForNotifications();
   downloadsStore.set((prev) => ({
     ...prev,
     [key]: { key, item, kind, height, status: 'queued', progress: 0 },
   }));
   pump();
+  return 'queued';
 }
 
 export function retryDownload(key: string) {
