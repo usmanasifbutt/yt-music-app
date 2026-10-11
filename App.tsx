@@ -1,3 +1,4 @@
+import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
@@ -18,10 +19,11 @@ import { colors } from './src/ui/theme';
 
 type Tab = 'search' | 'library';
 
-// e.g. "v1.1.0 (2)", plus "Beta" for test builds, so you can tell which build is installed.
+// e.g. "v1.3.0 (5)" or "v1.3.0-dev.ea3c35e (6) Beta", read from the installed APK. The build
+// number is assigned by EAS at build time, so it isn't in app.json.
 const APP_VERSION = [
-  `v${Constants.expoConfig?.version ?? '?'}`,
-  `(${Constants.expoConfig?.android?.versionCode ?? '?'})`,
+  `v${Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? '?'}`,
+  `(${Application.nativeBuildVersion ?? '?'})`,
   Constants.expoConfig?.name?.endsWith('Beta') ? 'Beta' : '',
 ]
   .filter(Boolean)

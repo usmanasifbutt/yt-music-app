@@ -1,8 +1,8 @@
 # Pushing a version tag (e.g. v1.3.0) builds the production APK on EAS, waits for it,
-# and publishes it as a GitHub release with the APK attached.
+# and publishes it as a GitHub release with the APK attached. The tag sets the app version;
+# EAS assigns the build number. Nothing needs to be committed first:
 #
-#   npm run bump -- minor
-#   git commit -am "Release v1.3.0" && git tag -a v1.3.0 -m "v1.3.0" && git push --follow-tags
+#   git tag -a v1.3.0 -m "v1.3.0" && git push --follow-tags
 name: Release
 
 on:
@@ -20,13 +20,12 @@ jobs:
       - name: Check out
         uses: actions/checkout@v4
 
-      - name: Check tag matches app version
+      - name: Set version from tag
         run: |
-          APP_VERSION=$(node -p "require('./app.json').expo.version")
-          if [ "v$APP_VERSION" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match app.json version $APP_VERSION. Run 'npm run bump' before tagging."
-            exit 1
+          if ! [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME isn't a version like v1.3.0"; exit 1
           fi
+          node scripts/set-version.mjs "${GITHUB_REF_NAME#v}"
 
       - name: Set up Node
         uses: actions/setup-node@v4

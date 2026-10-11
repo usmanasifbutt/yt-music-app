@@ -1,6 +1,9 @@
 # Starts a production Android build on EAS for every push to master.
 # The build runs on Expo's servers; this job only queues it (--no-wait), so it finishes in
 # about a minute. Follow the build at expo.dev → Projects → yt-music-app → Builds.
+#
+# These are test builds: the version reads "<last release>-dev.<commit>", e.g. 1.2.0-dev.ea3c35e.
+# EAS assigns the build number (versionCode), so every APK installs as an update.
 name: EAS build
 
 on:
@@ -18,12 +21,17 @@ concurrency:
 
 jobs:
   build:
-    # "Release vX.Y.Z" commits are built by release.yml when their tag is pushed.
-    if: ${{ !startsWith(github.event.head_commit.message, 'Release v') }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags, to name the dev version after the last release
+
+      - name: Set dev version
+        run: |
+          LAST=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "v$(node -p "require('./app.json').expo.version")")
+          node scripts/set-version.mjs "${LAST#v}-dev.${GITHUB_SHA::7}"
 
       - name: Set up Node
         uses: actions/setup-node@v4

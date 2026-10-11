@@ -44,18 +44,19 @@ For a release APK: `npx expo prebuild -p android`, then `cd android && ./gradlew
 
 ## Versions and rollback
 
-Each release has a version in `app.json` (`version`, shown in the app's top-right corner) and an
-Android `versionCode`, which must go up for a build to install as an update. Each release is also tagged
-in git (`v1.0.0`, `v1.1.0`, …).
+The app shows its version in the top-right corner, e.g. **v1.3.0 (7)**:
 
-**Release a new version**
+- **Version name (1.3.0)** comes from the git tag. CI sets it at build time; `app.json` isn't edited.
+- **Build number (7)** is Android's `versionCode`. EAS keeps it on its servers (`appVersionSource: remote`)
+  and raises it on every build (`autoIncrement`), so each APK installs as an update.
+- Builds from pushes to `master` are named after the last release, e.g. **v1.2.0-dev.ea3c35e (6)**.
+
+**Release a new version.** Just tag and push. `.github/workflows/release.yml` builds the APK and
+publishes the GitHub release:
 
 ```bash
-npm run bump -- minor        # or patch / major; also increments versionCode
-git commit -am "Release v1.2.0"
-git tag -a v1.2.0 -m "v1.2.0"   # annotated, so --follow-tags pushes it
+git tag -a v1.3.0 -m "v1.3.0"   # annotated, so --follow-tags pushes it
 git push --follow-tags
-eas build -p android --profile preview
 ```
 
 **Test before replacing your app.** The `beta` profile builds **YT Music Beta**, which has its own package ID,
@@ -69,8 +70,9 @@ eas build -p android --profile beta
 **Roll back.** Every build stays on expo.dev → Projects → yt-music-app → Builds, where you can download any
 older APK. Android blocks installing a lower `versionCode` over a higher one, so either:
 
-- **Rebuild the old code as a new version (keeps your library):** `git checkout v1.0.0`, set `versionCode` in
-  `app.json` above the broken build's, `eas build -p android --profile preview`, then `git checkout master`.
+- **Rebuild the old code (keeps your library):** `git checkout v1.2.0`, `eas build -p android --profile
+  production`, then `git checkout master`. EAS gives it the next build number, so it installs over the
+  broken build.
 - **Uninstall and install the old APK (quick, but loses the in-app library and playlists).** Your downloaded
   files stay in `Music/YT Music` and `Movies/YT Music`.
 
