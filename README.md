@@ -94,7 +94,9 @@ For developers who want to run their own copy.
 
 This app uses its own native code, so it doesn't run in the Expo Go app.
 
-**Releases** are automatic: pushing a version tag like `v1.5.0` builds the app and publishes it on the Releases page.
+**On GitHub** (free, no local setup): open the repository's **Actions** tab → **Build APK** → **Run workflow**, pick a branch, and download the APK from the finished run.
+
+**Releases** are automatic: pushing a version tag like `v1.7.0` builds the app the same way and publishes it on the Releases page.
 
 ---
 

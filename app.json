@@ -12,7 +12,6 @@
     },
     "android": {
       "package": "com.local.ytmusicoffline",
-      "versionCode": 3,
       "adaptiveIcon": {
         "backgroundColor": "#0F0F12",
         "foregroundImage": "./assets/android-icon-foreground.png",

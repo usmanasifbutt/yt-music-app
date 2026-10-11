@@ -1,37 +1,56 @@
-# Starts a production Android build on EAS for every push to master.
-# The build runs on Expo's servers; this job only queues it (--no-wait), so it finishes in
-# about a minute. Follow the build at expo.dev → Projects → yt-music-app → Builds.
+# Builds the Android APK on GitHub's own runner (free for public repos) with
+# `eas build --local`. Expo is only used for the build number and the signing key, which
+# don't count towards Expo's monthly build limit.
 #
-# These are test builds: the version reads "<last release>-dev.<commit>", e.g. 1.2.0-dev.ea3c35e.
-# EAS assigns the build number (versionCode), so every APK installs as an update.
-name: EAS build
+# Run it by hand: Actions → Build APK → Run workflow (pick any branch). The APK is attached
+# to the run as an artifact. The release workflow also calls it when a version tag is pushed.
+name: Build APK
 
 on:
-  push:
-    branches: [master]
-    # Docs-only changes don't need a new APK.
-    paths-ignore:
-      - '**.md'
-      - 'LICENSE'
   workflow_dispatch:
-
-concurrency:
-  group: eas-build-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_call:
+    inputs:
+      version:
+        description: App version for this build, e.g. 1.6.1 (empty = "<last tag>-dev.<commit>")
+        type: string
+        default: ''
+    outputs:
+      apk-name:
+        description: File name of the built APK (uploaded as the "apk" artifact)
+        value: ${{ jobs.build.outputs.apk-name }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
+    outputs:
+      apk-name: ${{ steps.version.outputs.apk-name }}
     steps:
       - name: Check out
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # tags, to name the dev version after the last release
+          fetch-depth: 0 # tags, to name dev builds after the last release
 
-      - name: Set dev version
+      - name: Set version
+        id: version
         run: |
-          LAST=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "v$(node -p "require('./app.json').expo.version")")
-          node scripts/set-version.mjs "${LAST#v}-dev.${GITHUB_SHA::7}"
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            LAST=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "v$(node -p "require('./app.json').expo.version")")
+            VERSION="${LAST#v}-dev.${GITHUB_SHA::7}"
+          fi
+          node scripts/set-version.mjs "$VERSION"
+          echo "apk-name=YT-Music-v$VERSION.apk" >> "$GITHUB_OUTPUT"
+
+      # The Android build needs more disk than the runner has free by default.
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/share/swift /usr/local/share/boost
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -46,8 +65,28 @@ jobs:
           packager: npm
           token: ${{ secrets.EXPO_TOKEN }}
 
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: gradle-${{ runner.os }}-
+
       - name: Install dependencies
         run: npm ci
 
-      - name: Queue Android build
-        run: eas build --platform android --profile production --non-interactive --no-wait
+      - name: Build APK
+        run: |
+          eas build --local --platform android --profile production --non-interactive \
+            --output "${{ steps.version.outputs.apk-name }}"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: ${{ steps.version.outputs.apk-name }}
+          retention-days: 14
+          if-no-files-found: error
+

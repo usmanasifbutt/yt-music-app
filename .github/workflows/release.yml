@@ -1,8 +1,8 @@
-# Pushing a version tag (e.g. v1.3.0) builds the production APK on EAS, waits for it,
-# and publishes it as a GitHub release with the APK attached. The tag sets the app version;
-# EAS assigns the build number. Nothing needs to be committed first:
+# Pushing a version tag (e.g. v1.7.0) builds the APK on GitHub (see build.yml) and
+# publishes it as a GitHub release. The tag sets the app version; EAS assigns the build
+# number. Nothing needs to be committed first:
 #
-#   git tag -a v1.3.0 -m "v1.3.0" && git push --follow-tags
+#   git tag -a v1.7.0 -m "v1.7.0" && git push --follow-tags
 name: Release
 
 on:
@@ -13,63 +13,49 @@ permissions:
   contents: write # create the GitHub release
 
 jobs:
-  release:
+  version:
     runs-on: ubuntu-latest
-    timeout-minutes: 120 # EAS free-tier builds can queue for a while
+    outputs:
+      version: ${{ steps.check.outputs.version }}
     steps:
-      - name: Check out
-        uses: actions/checkout@v4
-
-      - name: Set version from tag
+      - id: check
         run: |
           if ! [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Tag $GITHUB_REF_NAME isn't a version like v1.3.0"; exit 1
+            echo "::error::Tag $GITHUB_REF_NAME isn't a version like v1.7.0"; exit 1
           fi
-          node scripts/set-version.mjs "${GITHUB_REF_NAME#v}"
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22.x
-          cache: npm
+  build:
+    needs: version
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+    secrets: inherit
 
-      - name: Set up EAS
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          packager: npm
-          token: ${{ secrets.EXPO_TOKEN }}
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build APK on EAS
-        id: build
-        run: |
-          eas build --platform android --profile production --non-interactive --wait --json > build.json
-          URL=$(jq -r '.[0].artifacts.buildUrl' build.json)
-          if [ -z "$URL" ] || [ "$URL" = "null" ]; then
-            echo "::error::EAS build finished without an APK"; cat build.json; exit 1
-          fi
-          echo "url=$URL" >> "$GITHUB_OUTPUT"
-
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
       - name: Download APK
-        run: |
-          curl -fsSL "${{ steps.build.outputs.url }}" -o "YT-Music-$GITHUB_REF_NAME.apk"
-          sha256sum "YT-Music-$GITHUB_REF_NAME.apk" | tee checksum.txt
+        uses: actions/download-artifact@v4
+        with:
+          name: apk
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          APK: ${{ needs.build.outputs.apk-name }}
         run: |
+          SHA=$(sha256sum "$APK" | cut -d' ' -f1)
           {
-            echo "Download **YT-Music-$GITHUB_REF_NAME.apk** below and open it on your phone. It installs over earlier versions and keeps your library."
+            echo "Download **$APK** below and open it on your phone. It installs over earlier versions and keeps your library."
             echo
-            echo "SHA-256: \`$(cut -d' ' -f1 checksum.txt)\`"
+            echo "SHA-256: \`$SHA\`"
             echo
             echo "> Downloading from YouTube is against YouTube's Terms of Service and, for copyrighted music, may infringe copyright where you live. Use it for content you have the right to keep."
           } > notes.md
-          gh release create "$GITHUB_REF_NAME" "YT-Music-$GITHUB_REF_NAME.apk" \
+          gh release create "$GITHUB_REF_NAME" "$APK" \
+            --repo "$GITHUB_REPOSITORY" \
             --title "YT Music $GITHUB_REF_NAME" \
             --notes-file notes.md \
             --generate-notes \
