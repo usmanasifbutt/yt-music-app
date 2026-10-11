@@ -1,83 +1,120 @@
 # YT Music
 
-A personal Android app that searches YouTube / YouTube Music, downloads audio to the phone, and plays it offline with background and lock-screen playback.
+A personal Android app for listening to music offline. Search YouTube, save songs or videos to your phone, and play them anytime, even without internet, with the screen off.
 
-> Downloading from YouTube is against YouTube's Terms of Service and, for copyrighted music, may infringe copyright where you live. Use it for content you have the right to keep.
+> Built as a learning project. Please read the [legal notice](#legal-notice) before using it.
 
-## How it works
+---
 
-| Piece | Where | Notes |
-|---|---|---|
-| Search + download | `modules/yt-dlp` (local Expo module, Kotlin) | Wraps [youtubedl-android](https://github.com/yausername/youtubedl-android) 0.18.1, which bundles yt-dlp, Python and ffmpeg. |
-| Library | `src/library.ts` | Audio saved to **Music/YT Music/**, video to **Movies/YT Music/** (visible to Files and other players, with title/artist tags). Covers and the SQLite library database stay in app storage; playlists are mirrored as `.m3u` files in Music/YT Music. |
-| Downloads queue | `src/downloads.ts` | Up to 2 in parallel, progress events, cancel, retry. |
-| Player | `src/player.ts` | `expo-audio` with background playback, lock-screen controls, queue, shuffle, repeat. |
-| UI | `App.tsx`, `src/ui/*` | Search and Library tabs, mini player, full-screen player. |
+## What you can do
 
-Audio is saved as YouTube's original stream (m4a/AAC, or webm/Opus when m4a is unavailable). Nothing is re-encoded.
+**Find music**
+- Search YouTube for songs, artists, naats, recitations and more
+- Paste a YouTube link (a single video or a whole playlist)
+- A Home screen with suggestions based on the interests you pick, plus "Because you played…" mixes
 
-**Update engine** (Library tab) pulls the latest yt-dlp onto the phone. Use it whenever searches or downloads start failing; YouTube changes break older versions.
+**Save it to your phone**
+- Download as audio, or as video in 360p, 720p or 1080p
+- Downloads keep going when you leave the app
+- Files go to your phone's **Music** and **Movies** folders, so other music players can use them too
 
-## Building
+**Listen anywhere**
+- Plays in the background and on the lock screen
+- Shuffle, repeat, queue, playback speed and a sleep timer
+- Playlists, including importing a whole YouTube playlist in one tap
+- Sort and filter your library, and see how much space it uses
 
-This app uses custom native code, so it **does not run in Expo Go**. You need a development build or a standalone APK.
+**Keep your music safe**
+- If you reinstall the app or move to a new phone, **Restore** brings back your downloads and playlists
 
-### Option A: Expo cloud build (no Android SDK needed)
+## Screenshots
 
-```bash
-npm install -g eas-cli
-eas login
-eas build -p android --profile preview
-```
+_Coming soon._
 
-Install the APK it links to on your phone. Use `--profile development` for a dev client that live-reloads JS from `npx expo start`.
+---
 
-### Option B: Local build
+## Install the app
 
-Requires JDK 17 and Android Studio (SDK + platform tools). Then, with the phone connected over USB with debugging enabled:
+**You need:**
+- An Android phone running Android 7 or newer (most phones from the last few years)
+- About **140 MB** of free space for the app, plus space for your music
+- An internet connection for searching and downloading (not for listening)
 
-```bash
-npx expo run:android
-```
+**Steps:**
+1. On your phone, open the [latest release](https://github.com/usmanasifbutt/yt-music-app/releases/latest).
+2. Download the **.apk** file under *Assets*.
+3. Open it. If Android asks, allow your browser to **install unknown apps**.
+4. Open **YT Music**, read the short notice, and pick a few interests.
 
-For a release APK: `npx expo prebuild -p android`, then `cd android && ./gradlew assembleRelease`.
+**Updating:** download and install a newer release the same way. Your library and playlists are kept.
 
-## Versions and rollback
+## Keep downloads working
 
-The app shows its version in the top-right corner, e.g. **v1.3.0 (7)**:
+YouTube changes often, and that can stop downloads from working. The app has a built-in download engine that you can update:
 
-- **Version name (1.3.0)** comes from the git tag. CI sets it at build time; `app.json` isn't edited.
-- **Build number (7)** is Android's `versionCode`. EAS keeps it on its servers (`appVersionSource: remote`)
-  and raises it on every build (`autoIncrement`), so each APK installs as an update.
-- Builds from pushes to `master` are named after the last release, e.g. **v1.2.0-dev.ea3c35e (6)**.
+- **Automatic:** the app checks for an engine update once a day when you open it.
+- **Manual:** go to **Settings → Download engine → Update**.
 
-**Release a new version.** Just tag and push. `.github/workflows/release.yml` builds the APK and
-publishes the GitHub release:
+If searches or downloads start failing, update the engine first. It fixes most problems.
 
-```bash
-git tag -a v1.3.0 -m "v1.3.0"   # annotated, so --follow-tags pushes it
-git push --follow-tags
-```
+## Something not working?
 
-**Test before replacing your app.** The `beta` profile builds **YT Music Beta**, which has its own package ID,
-so it installs *next to* the real app with its own empty library. Use it to try a risky build; if it works,
-build `preview` for real.
+1. Update the download engine (see above) and try again.
+2. If it still fails, [open an issue](https://github.com/usmanasifbutt/yt-music-app/issues/new) and include:
+   - What you were doing (for example, "downloading a song as 720p video")
+   - The error message. For failed downloads, tap the item in **Library → Downloads** to see the full message.
+   - The app version, shown at the top of **Home** and in **Settings → About**
+   - Your phone model and Android version
+   - Screenshots, if they help
 
-```bash
-eas build -p android --profile beta
-```
+---
 
-**Roll back.** Every build stays on expo.dev → Projects → yt-music-app → Builds, where you can download any
-older APK. Android blocks installing a lower `versionCode` over a higher one, so either:
+## Build it yourself
 
-- **Rebuild the old code (keeps your library):** `git checkout v1.2.0`, `eas build -p android --profile
-  production`, then `git checkout master`. EAS gives it the next build number, so it installs over the
-  broken build.
-- **Uninstall and install the old APK (quick, but loses the in-app library and playlists).** Your downloaded
-  files stay in `Music/YT Music` and `Movies/YT Music`.
+For developers who want to run their own copy.
 
-## Notes
+**You need:**
+- [Node.js](https://nodejs.org) 22 or newer
+- A free [Expo](https://expo.dev) account
+- Git
 
-- The first launch takes a few seconds to unpack Python and ffmpeg ("Preparing download engine…").
-- APK size is ~70–90 MB per ABI because Python + ffmpeg are bundled. `buildArchs` in `app.json` limits builds to `arm64-v8a` (phones) and `x86_64` (emulators).
-- Long-press a song in Library to delete it.
+**Steps:**
+1. Download the code and install what it needs:
+   ```bash
+   git clone https://github.com/usmanasifbutt/yt-music-app.git
+   cd yt-music-app
+   npm install
+   ```
+2. Build the app on Expo's servers (no Android Studio needed):
+   ```bash
+   npx eas-cli login
+   npx eas-cli build --platform android --profile preview
+   ```
+3. When it finishes, open the link it prints on your phone and install the app.
+
+This app uses its own native code, so it doesn't run in the Expo Go app.
+
+**Releases** are automatic: pushing a version tag like `v1.5.0` builds the app and publishes it on the Releases page.
+
+---
+
+## App info
+
+| | |
+|---|---|
+| Platform | Android 7.0+ (64-bit phones) |
+| App size | About 136 MB. Most of that is the download engine built into the app. |
+| Where files are saved | Music/YT Music (audio) and Movies/YT Music (video) |
+| Accounts | None needed |
+| Data collected | None. Everything stays on your phone. |
+| Built with | React Native (Expo) and the open-source [yt-dlp](https://github.com/yt-dlp/yt-dlp) download engine |
+
+## Legal notice
+
+This project was made for **learning and exploration only**. It isn't affiliated with YouTube or Google.
+
+Downloading from YouTube goes against YouTube's Terms of Service, and saving copyrighted music may break copyright law where you live. Only download content you have the right to keep, such as your own uploads or freely licensed music. You are responsible for how you use this app.
+
+---
+
+Thanks for checking out YT Music! Suggestions and bug reports are welcome on the [issues page](https://github.com/usmanasifbutt/yt-music-app/issues).
