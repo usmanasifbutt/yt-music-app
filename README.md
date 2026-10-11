@@ -94,9 +94,15 @@ For developers who want to run their own copy.
 
 This app uses its own native code, so it doesn't run in the Expo Go app.
 
-**On GitHub** (free, no local setup): open the repository's **Actions** tab → **Build APK** → **Run workflow**, pick a branch, and download the APK from the finished run.
+**On GitHub** (no local setup): open the repository's **Actions** tab → **Build APK** → **Run workflow**, pick a branch and where to build, then download the APK from the finished run:
+- **github**: free, builds on GitHub (about 20–40 minutes)
+- **cloud**: builds on Expo's servers, usually faster, but uses the Expo plan's monthly build limit
 
-**Releases** are automatic: pushing a version tag like `v1.7.0` builds the app the same way and publishes it on the Releases page.
+**Releases** are automatic: pushing a version tag like `v1.7.0` builds the app on GitHub and publishes it on the Releases page.
+
+**Replacing a release's APK** (for example, to rebuild it with the cloud builder):
+- One click: **Actions → Release → Run workflow**, enter the tag (e.g. `v1.6.1`) and pick the builder. The APK on that release is replaced.
+- By hand: run **Build APK** on the tag (choose it under "Use workflow from"). The APK gets the clean version number, so you can upload it to the release yourself.
 
 ---
 

@@ -1,39 +1,59 @@
-# Pushing a version tag (e.g. v1.7.0) builds the APK on GitHub (see build.yml) and
-# publishes it as a GitHub release. The tag sets the app version; EAS assigns the build
-# number. Nothing needs to be committed first:
+# Publishes a GitHub release with the APK (built by build.yml).
 #
+# New release: push a version tag (builds on GitHub, free):
 #   git tag -a v1.7.0 -m "v1.7.0" && git push --follow-tags
+#
+# Re-publish an existing tag, or pick the builder: Actions → Release → Run workflow, enter
+# the tag (e.g. v1.6.1) and choose github or cloud. If that release already exists, its APK
+# is replaced.
 name: Release
 
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to release, e.g. v1.6.1
+        type: string
+        required: true
+      builder:
+        description: Where to build
+        type: choice
+        options: [github, cloud]
+        default: github
 
 permissions:
-  contents: write # create the GitHub release
+  contents: write # create/update the GitHub release
 
 jobs:
   version:
     runs-on: ubuntu-latest
     outputs:
+      tag: ${{ steps.check.outputs.tag }}
       version: ${{ steps.check.outputs.version }}
     steps:
       - id: check
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          if ! [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Tag $GITHUB_REF_NAME isn't a version like v1.7.0"; exit 1
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::$TAG isn't a version tag like v1.7.0"; exit 1
           fi
-          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
   build:
     needs: version
     uses: ./.github/workflows/build.yml
     with:
+      builder: ${{ inputs.builder || 'github' }}
       version: ${{ needs.version.outputs.version }}
+      ref: refs/tags/${{ needs.version.outputs.tag }}
     secrets: inherit
 
   release:
-    needs: build
+    needs: [version, build]
     runs-on: ubuntu-latest
     steps:
       - name: Download APK
@@ -44,8 +64,15 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
           APK: ${{ needs.build.outputs.apk-name }}
         run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            # Release exists (re-run): swap in the new APK.
+            gh release upload "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" --clobber
+            echo "Replaced the APK on the existing $TAG release"
+            exit 0
+          fi
           SHA=$(sha256sum "$APK" | cut -d' ' -f1)
           {
             echo "Download **$APK** below and open it on your phone. It installs over earlier versions and keeps your library."
@@ -54,9 +81,9 @@ jobs:
             echo
             echo "> Downloading from YouTube is against YouTube's Terms of Service and, for copyrighted music, may infringe copyright where you live. Use it for content you have the right to keep."
           } > notes.md
-          gh release create "$GITHUB_REF_NAME" "$APK" \
+          gh release create "$TAG" "$APK" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "YT Music $GITHUB_REF_NAME" \
+            --title "YT Music $TAG" \
             --notes-file notes.md \
             --generate-notes \
             --verify-tag

@@ -1,17 +1,33 @@
-# Builds the Android APK on GitHub's own runner (free for public repos) with
-# `eas build --local`. Expo is only used for the build number and the signing key, which
-# don't count towards Expo's monthly build limit.
+# Builds the Android APK, either:
+#   - github: on GitHub's own runner with `eas build --local` (free for public repos, ~20-40 min).
+#     Expo only provides the build number and signing key, which don't count towards its limit.
+#   - cloud:  on Expo's servers (usually faster, but uses the Expo plan's monthly build limit).
 #
-# Run it by hand: Actions → Build APK → Run workflow (pick any branch). The APK is attached
-# to the run as an artifact. The release workflow also calls it when a version tag is pushed.
+# Run it by hand: Actions → Build APK → Run workflow (pick a branch or tag and a builder). The
+# APK is attached to the run as an artifact. Run on a version tag, the APK gets the clean
+# version (e.g. 1.6.1) and can be uploaded to that release; on a branch it's a test build
+# named "<last tag>-dev.<commit>". The release workflow also calls it.
 name: Build APK
 
 on:
   workflow_dispatch:
+    inputs:
+      builder:
+        description: Where to build
+        type: choice
+        options: [github, cloud]
+        default: github
   workflow_call:
     inputs:
+      builder:
+        type: string
+        default: github
       version:
-        description: App version for this build, e.g. 1.6.1 (empty = "<last tag>-dev.<commit>")
+        description: App version, e.g. 1.6.1 (empty = "<last tag>-dev.<commit>")
+        type: string
+        default: ''
+      ref:
+        description: Git ref to build (empty = the triggering ref)
         type: string
         default: ''
     outputs:
@@ -22,31 +38,41 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120 # cloud builds on the free plan can queue for a while
     outputs:
       apk-name: ${{ steps.version.outputs.apk-name }}
+    env:
+      LOCAL: ${{ inputs.builder != 'cloud' }}
     steps:
       - name: Check out
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.ref }}
           fetch-depth: 0 # tags, to name dev builds after the last release
 
       - name: Set version
         id: version
         run: |
           VERSION="${{ inputs.version }}"
+          # A commit that is exactly a version tag (e.g. run on tag v1.6.1) gets the clean
+          # version, so its APK can be uploaded to that release as-is.
+          if [ -z "$VERSION" ] && TAG=$(git describe --tags --exact-match --match 'v*' HEAD 2>/dev/null); then
+            VERSION="${TAG#v}"
+          fi
           if [ -z "$VERSION" ]; then
             LAST=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "v$(node -p "require('./app.json').expo.version")")
-            VERSION="${LAST#v}-dev.${GITHUB_SHA::7}"
+            VERSION="${LAST#v}-dev.$(git rev-parse --short=7 HEAD)"
           fi
           node scripts/set-version.mjs "$VERSION"
           echo "apk-name=YT-Music-v$VERSION.apk" >> "$GITHUB_OUTPUT"
 
       # The Android build needs more disk than the runner has free by default.
       - name: Free disk space
+        if: env.LOCAL == 'true'
         run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/share/swift /usr/local/share/boost
 
       - name: Set up Java
+        if: env.LOCAL == 'true'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -66,6 +92,7 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Cache Gradle
+        if: env.LOCAL == 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -77,10 +104,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build APK
+      - name: Build APK on GitHub
+        if: env.LOCAL == 'true'
         run: |
           eas build --local --platform android --profile production --non-interactive \
             --output "${{ steps.version.outputs.apk-name }}"
+
+      - name: Build APK on Expo cloud
+        if: env.LOCAL != 'true'
+        run: |
+          eas build --platform android --profile production --non-interactive --wait --json > build.json
+          URL=$(jq -r '.[0].artifacts.buildUrl' build.json)
+          if [ -z "$URL" ] || [ "$URL" = "null" ]; then
+            echo "::error::Expo build finished without an APK"; cat build.json; exit 1
+          fi
+          curl -fsSL "$URL" -o "${{ steps.version.outputs.apk-name }}"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -89,4 +127,3 @@ jobs:
           path: ${{ steps.version.outputs.apk-name }}
           retention-days: 14
           if-no-files-found: error
-
