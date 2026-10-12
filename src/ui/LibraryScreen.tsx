@@ -355,9 +355,7 @@ function DownloadsList({ onGoSearch }: { onGoSearch: () => void }) {
             <Text style={[type.bodySm, d.status === 'error' && { color: colors.accent }]} numberOfLines={2}>
               {d.status === 'error'
                 ? `${d.error} · tap for details`
-                : d.usedFallback
-                  ? 'Waiting · retrying another way'
-                  : 'Waiting…'}
+                : 'Waiting…'}
             </Text>
           )}
         </Pressable>

@@ -13,18 +13,15 @@ export type DownloadState = {
   status: 'queued' | 'downloading' | 'error';
   progress: number;
   error?: string;
-  /** Already retried with the fallback YouTube clients after a bot check. */
-  usedFallback?: boolean;
 };
 
 // Many downloads in a row (importing a playlist) make YouTube answer "Sign in to confirm
-// you're not a bot", on any network. So: space downloads out (much more for big queues),
-// retry a bot-checked song once with other YouTube clients, then pause the whole queue for
-// longer and longer. Songs stay queued, never failed, and a success resets the waits.
+// you're not a bot", on any network. So: space downloads out (much more for big queues), and
+// when it happens anyway, pause the whole queue for longer and longer. Songs stay queued,
+// never failed, and a success resets the waits.
 const GAP_MS = { normal: [4_000, 7_000], bulk: [15_000, 30_000] } as const;
 /** More waiting items than this switches to one-at-a-time with the bulk gap. */
 const BULK_THRESHOLD = 3;
-const FALLBACK_CLIENTS = 'tv,mweb';
 const BOT_PAUSE_MIN = [5, 15, 30];
 const isBotCheck = (message: string) => /not a bot|sign in to confirm/i.test(message);
 
@@ -100,7 +97,7 @@ function pump() {
   pump(); // schedules the next start, if any
 }
 
-/** YouTube refused with its bot check (even after the fallback): wait longer each time. */
+/** YouTube refused with its bot check: wait longer each time. */
 function pauseForBotCheck() {
   if (pauseLevel >= BOT_PAUSE_MIN.length) {
     queuePauseStore.set({ until: null, stopped: true });
@@ -111,12 +108,11 @@ function pauseForBotCheck() {
   queuePauseStore.set((s) => ({ until: Math.max(s.until ?? 0, until), stopped: false }));
 }
 
-async function run({ key, item, kind, height, usedFallback }: DownloadState) {
+async function run({ key, item, kind, height }: DownloadState) {
   patch(key, { status: 'downloading', progress: 0 });
   try {
     const baseName = `${item.title} - ${item.artist}`;
-    const client = usedFallback ? FALLBACK_CLIENTS : '';
-    const { uri, thumbnailPath, size } = await YtDlp.download(key, item.id, kind, height, baseName, client);
+    const { uri, thumbnailPath, size } = await YtDlp.download(key, item.id, kind, height, baseName);
     pauseLevel = 0;
     addTrack({
       key,
@@ -139,9 +135,9 @@ async function run({ key, item, kind, height, usedFallback }: DownloadState) {
     const message = nativeErrorMessage(e);
     if (message === 'Canceled') remove(key);
     else if (isBotCheck(message)) {
-      // First try the fallback clients straight away; after that, hold the whole queue.
-      patch(key, { status: 'queued', progress: 0, usedFallback: true });
-      if (usedFallback) pauseForBotCheck();
+      // Keep it queued and hold the whole queue for a while.
+      patch(key, { status: 'queued', progress: 0 });
+      pauseForBotCheck();
     } else patch(key, { status: 'error', error: message });
   }
   pump();
