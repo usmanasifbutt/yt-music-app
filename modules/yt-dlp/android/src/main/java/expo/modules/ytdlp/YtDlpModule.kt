@@ -4,10 +4,12 @@ import android.app.Activity
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
@@ -19,6 +21,7 @@ import expo.modules.kotlin.functions.Queues
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -27,6 +30,7 @@ class YtDlpException(message: String, cause: Throwable? = null) :
 
 private const val PUBLIC_FOLDER = "YT Music"
 private const val WRITE_REQUEST_CODE = 4202
+private const val IMPORT_COOKIES_REQUEST_CODE = 4203
 private const val MAX_PLAYLIST_BYTES = 2_000_000
 
 class YtDlpModule : Module() {
@@ -38,6 +42,11 @@ class YtDlpModule : Module() {
   private var initialized = false
 
   private var pendingWriteRequest: Promise? = null
+  private var pendingImport: Promise? = null
+
+  /** The cookies file just imported, so the app can offer to delete the original. */
+  @Volatile
+  private var importedCookiesUri: Uri? = null
 
   /** Media files in Music/YT Music or Movies/YT Music (needs read permission for files from older installs). */
   private fun scanMedia(isVideo: Boolean): List<Map<String, Any?>> {
@@ -124,6 +133,16 @@ class YtDlpModule : Module() {
         throw YtDlpException("Failed to initialize yt-dlp: ${e.message}", e)
       }
     }
+  }
+
+  /**
+   * Signed in: pass a private copy of the session. Returns the copy to finish afterwards.
+   * (youtubedl-android already passes its bundled QuickJS, which signed-in YouTube clients need.)
+   */
+  private fun addAccount(request: YoutubeDLRequest, key: String): File? {
+    val cookies = YouTubeAccount.startRun(context, key) ?: return null
+    request.addOption("--cookies", cookies.absolutePath)
+    return cookies
   }
 
   private fun run(request: YoutubeDLRequest): String {
@@ -215,7 +234,10 @@ class YtDlpModule : Module() {
     Events("onProgress")
 
     AsyncFunction("init") Coroutine { ->
-      withContext(Dispatchers.IO) { ensureInit() }
+      withContext(Dispatchers.IO) {
+        ensureInit()
+        YouTubeAccount.removeLeftoverRuns(context)
+      }
     }
 
     AsyncFunction("version") Coroutine { ->
@@ -226,11 +248,13 @@ class YtDlpModule : Module() {
     }
 
     // Updates the bundled yt-dlp; returns "DONE" or "ALREADY_UP_TO_DATE".
+    // Nightly, as yt-dlp recommends: YouTube fixes land there weeks before a stable release
+    // (e.g. signed-in downloads broke on stable 2026.08.19 and were fixed in nightly).
     AsyncFunction("update") Coroutine { ->
       withContext(Dispatchers.IO) {
         ensureInit()
         try {
-          YoutubeDL.getInstance().updateYoutubeDL(context)?.name ?: "UNKNOWN"
+          YoutubeDL.getInstance().updateYoutubeDL(context, YoutubeDL.UpdateChannel.NIGHTLY)?.name ?: "UNKNOWN"
         } catch (e: Exception) {
           throw YtDlpException("Update failed: ${cleanError(e, "unknown error")}", e)
         }
@@ -259,7 +283,13 @@ class YtDlpModule : Module() {
           addOption("-J")
           addOption("--no-playlist")
         }
-        run(request)
+        val cookies = addAccount(request, "formats-$id")
+        var ok = false
+        try {
+          run(request).also { ok = true }
+        } finally {
+          cookies?.let { YouTubeAccount.finishRun(context, it, ok) }
+        }
       }
     }
 
@@ -288,6 +318,8 @@ class YtDlpModule : Module() {
           addOption("-o", "${work.absolutePath}/%(id)s.%(ext)s")
           addOption("-o", "thumbnail:${thumbs.absolutePath}/%(id)s.%(ext)s")
         }
+        val cookies = addAccount(request, key)
+        var ok = false
         DownloadNotifier.started(context, key, baseName)
         try {
           YoutubeDL.getInstance().execute(request, processId = key, callback = { progress, eta, _ ->
@@ -297,6 +329,7 @@ class YtDlpModule : Module() {
           val media = work.listFiles { f -> f.name.startsWith("$id.") }.orEmpty().maxByOrNull { it.length() }
             ?: throw YtDlpException("Download finished but no media file was found")
           val thumb = File(thumbs, "$id.jpg")
+          ok = true
           mapOf(
             "size" to media.length().toDouble(),
             "uri" to publish(media, isVideo, baseName),
@@ -309,6 +342,7 @@ class YtDlpModule : Module() {
         } catch (e: Exception) {
           throw YtDlpException(cleanError(e, "Download failed"), e)
         } finally {
+          cookies?.let { YouTubeAccount.finishRun(context, it, ok) }
           work.deleteRecursively()
           DownloadNotifier.finished(context, key)
         }
@@ -419,10 +453,87 @@ class YtDlpModule : Module() {
       }
     }.runOnQueue(Queues.MAIN)
 
+    // --- YouTube sign-in (see YouTubeAccount for the security rules) ---
+
+    AsyncFunction("isSignedIn") Coroutine { ->
+      withContext(Dispatchers.IO) { YouTubeAccount.isSignedIn(context) }
+    }
+
+    // Called by the sign-in screen once it reaches YouTube. True if a signed-in session was saved.
+    AsyncFunction("captureSignIn") {
+      YouTubeAccount.captureFromWebView(context)
+    }.runOnQueue(Queues.MAIN)
+
+    // Wipes the sign-in screen's cookies and storage (e.g. when it closes without signing in).
+    AsyncFunction("clearSignInWebView") {
+      YouTubeAccount.clearWebView()
+    }.runOnQueue(Queues.MAIN)
+
+    AsyncFunction("signOut") {
+      YouTubeAccount.signOut(context)
+    }.runOnQueue(Queues.MAIN)
+
+    // Lets the user pick a cookies.txt exported from a browser. Resolves true when imported,
+    // false if they backed out; rejects with a readable message for a wrong file.
+    AsyncFunction("importCookies") { promise: Promise ->
+      val activity = appContext.currentActivity
+      if (activity == null) {
+        promise.reject(YtDlpException("The app isn't ready yet, try again"))
+        return@AsyncFunction
+      }
+      val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+        addCategory(Intent.CATEGORY_OPENABLE)
+        type = "*/*"
+        putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("text/plain", "text/*", "application/octet-stream"))
+      }
+      pendingImport?.resolve(false)
+      pendingImport = promise
+      importedCookiesUri = null
+      activity.startActivityForResult(intent, IMPORT_COOKIES_REQUEST_CODE)
+    }.runOnQueue(Queues.MAIN)
+
+    // Deletes the cookies file the user just imported from (it holds the session in plain text).
+    AsyncFunction("deleteImportedCookiesFile") Coroutine { ->
+      withContext(Dispatchers.IO) {
+        val uri = importedCookiesUri ?: return@withContext false
+        importedCookiesUri = null
+        try {
+          DocumentsContract.deleteDocument(context.contentResolver, uri)
+        } catch (e: Exception) {
+          false
+        }
+      }
+    }
+
     OnActivityResult { _, payload ->
-      if (payload.requestCode == WRITE_REQUEST_CODE) {
-        pendingWriteRequest?.resolve(payload.resultCode == Activity.RESULT_OK)
-        pendingWriteRequest = null
+      when (payload.requestCode) {
+        WRITE_REQUEST_CODE -> {
+          pendingWriteRequest?.resolve(payload.resultCode == Activity.RESULT_OK)
+          pendingWriteRequest = null
+        }
+        IMPORT_COOKIES_REQUEST_CODE -> {
+          val promise = pendingImport ?: return@OnActivityResult
+          pendingImport = null
+          val uri = payload.data?.data
+          if (payload.resultCode != Activity.RESULT_OK || uri == null) {
+            promise.resolve(false)
+            return@OnActivityResult
+          }
+          appContext.backgroundCoroutineScope.launch {
+            try {
+              val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
+                YouTubeAccount.readLimited(input)
+              } ?: throw YtDlpException("Could not read that file")
+              YouTubeAccount.import(context, bytes)
+              importedCookiesUri = uri
+              promise.resolve(true)
+            } catch (e: YtDlpException) {
+              promise.reject(e)
+            } catch (e: Exception) {
+              promise.reject(YtDlpException("Could not read that file"))
+            }
+          }
+        }
       }
     }
 

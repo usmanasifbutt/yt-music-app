@@ -37,6 +37,13 @@ declare class YtDlpNative extends NativeModule<Events> {
   mediaPaths(uris: string[]): Promise<(string | null)[]>;
   scanFolders(): Promise<FolderScan>;
   requestWriteAccess(uris: string[]): Promise<boolean>;
+  // YouTube sign-in. The session stays in native code; JavaScript only ever sees yes/no.
+  isSignedIn(): Promise<boolean>;
+  captureSignIn(): Promise<boolean>;
+  clearSignInWebView(): Promise<void>;
+  signOut(): Promise<void>;
+  importCookies(): Promise<boolean>;
+  deleteImportedCookiesFile(): Promise<boolean>;
 }
 
 export type ScannedMedia = {

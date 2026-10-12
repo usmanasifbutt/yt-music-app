@@ -39,3 +39,10 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# YouTube session exports (never commit)
+cookies*.txt
+*cookies.txt
+
+# Built apps
+*.apk

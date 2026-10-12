@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import YtDlp from './modules/yt-dlp';
+import { loadAccount } from './src/account';
 import { downloadsStore, nativeErrorMessage } from './src/downloads';
 import { loadInterests } from './src/interests';
 import { loadLibrary, markUpdated, shouldAutoUpdate } from './src/library';
@@ -53,6 +54,7 @@ export default function App() {
       setLibraryLoaded(true);
     });
     setupPlayer();
+    loadAccount().catch(() => {});
     // First launch unpacks python + ffmpeg; do it up front so the first search is fast.
     // The yt-dlp bundled in the APK goes stale as YouTube changes, so refresh it daily.
     YtDlp.init()

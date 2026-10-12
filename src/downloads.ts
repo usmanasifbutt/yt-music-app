@@ -1,5 +1,6 @@
 import { PermissionsAndroid, Platform, ToastAndroid } from 'react-native';
 import YtDlp, { downloadKey, MediaKind, SearchResult } from '../modules/yt-dlp';
+import { accountStore } from './account';
 import { addTrack, libraryStore } from './library';
 import { trackAdded } from './playlists';
 import { settingsStore } from './settings';
@@ -115,6 +116,15 @@ function pauseForBotCheck(reason: string) {
 const othersWaiting = (key: string) =>
   Object.values(downloadsStore.get()).some((d) => d.key !== key && d.status === 'queued');
 
+/** yt-dlp's bot-check text is mostly advice for its command line; lead with what to do in the app. */
+function explain(message: string) {
+  if (!isBotCheck(message)) return message;
+  const hint = accountStore.get().signedIn
+    ? "YouTube still asked to confirm you're not a bot. Your sign-in may have expired: sign out and sign in again in Settings → YouTube account."
+    : "YouTube asked to confirm you're not a bot. Signing in under Settings → YouTube account usually fixes this.";
+  return `${hint}\n\n${message}`;
+}
+
 async function run({ key, item, kind, height }: DownloadState) {
   patch(key, { status: 'downloading', progress: 0, error: undefined });
   try {
@@ -139,7 +149,7 @@ async function run({ key, item, kind, height }: DownloadState) {
     trackAdded(key);
     remove(key);
   } catch (e: any) {
-    const message = nativeErrorMessage(e);
+    const message = explain(nativeErrorMessage(e));
     if (message === 'Canceled') remove(key);
     else if (isBotCheck(message) && othersWaiting(key)) {
       // Keep it queued (with the reason) and hold the whole queue for a while.
@@ -148,8 +158,7 @@ async function run({ key, item, kind, height }: DownloadState) {
       pauseForBotCheck(message);
     } else {
       patch(key, { status: 'error', error: message });
-      ToastAndroid.show(`Download failed: ${item.title}
-${message}`, ToastAndroid.LONG);
+      ToastAndroid.show(`Download failed: ${item.title}\n${message.split('\n')[0]}`, ToastAndroid.LONG);
     }
   }
   pump();

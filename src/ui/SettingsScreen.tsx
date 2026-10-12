@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Alert, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, ScrollView, StyleSheet, Text, ToastAndroid, View } from 'react-native';
 import YtDlp from '../../modules/yt-dlp';
 import type { EngineState } from '../../App';
+import { accountStore, loadAccount, signOutOfYouTube } from '../account';
 import { VERSION_LABEL } from '../appInfo';
 import { nativeErrorMessage } from '../downloads';
 import { INTERESTS, interestsStore } from '../interests';
@@ -16,6 +17,7 @@ import { InterestPicker } from './InterestPicker';
 import { Badge, Button, Card, Segmented, SettingRow, StackedBar, Stepper, Toggle } from './kit';
 import { NoticeCards } from './LegalNotice';
 import { runRestore } from './restoreFlow';
+import { SignInScreen } from './SignInScreen';
 import { Sheet, SheetItem } from './Sheet';
 import { colors, LIST_BOTTOM, radius, space, type } from './theme';
 import { confirmDeleteTracks } from './TrackMenu';
@@ -32,6 +34,8 @@ export function SettingsScreen({ engine }: { engine: EngineState }) {
   const [updating, setUpdating] = useState(false);
   const [sheet, setSheet] = useState<'speed' | 'notice' | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
+  const { signedIn } = useStore(accountStore);
 
   useEffect(() => {
     if (engine === 'ready') YtDlp.version().then(setVersion).catch(() => {});
@@ -50,6 +54,37 @@ export function SettingsScreen({ engine }: { engine: EngineState }) {
     } finally {
       setUpdating(false);
     }
+  }
+
+  async function importCookiesFile() {
+    try {
+      if (!(await YtDlp.importCookies())) return;
+      await loadAccount();
+      Alert.alert('Signed in to YouTube', 'The file you picked still holds the sign-in in plain text. Delete it from your phone now?', [
+        { text: 'Keep', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            if (await YtDlp.deleteImportedCookiesFile()) ToastAndroid.show('Cookies file deleted', ToastAndroid.SHORT);
+            else Alert.alert("Couldn't delete it", 'Please delete the cookies file yourself in the Files app.');
+          },
+        },
+      ]);
+    } catch (e) {
+      Alert.alert('Import failed', nativeErrorMessage(e));
+    }
+  }
+
+  function confirmSignOut() {
+    Alert.alert(
+      'Sign out of YouTube?',
+      'Removes the YouTube session from this phone. To end it on Google too, remove this device under Google Account → Security → Your devices.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign out', style: 'destructive', onPress: () => void signOutOfYouTube() },
+      ]
+    );
   }
 
   const audio = library.filter((t) => t.kind === 'audio');
@@ -99,6 +134,30 @@ export function SettingsScreen({ engine }: { engine: EngineState }) {
           />
         </Group>
 
+        <Group
+          icon="account-circle"
+          title="YouTube account"
+          subtitle={`Stops "confirm you're not a bot" errors`}
+          badge={signedIn ? 'Signed in' : 'Signed out'}
+          badgeTone={signedIn ? 'success' : undefined}>
+          {signedIn ? (
+            <SettingRow
+              title="Downloads use your YouTube sign-in"
+              subtitle="Kept only on this phone, never backed up"
+              right={<Button label="Sign out" variant="secondary" onPress={confirmSignOut} />}
+            />
+          ) : (
+            <>
+              <SettingRow title="Sign in" subtitle="On Google's own page. Use a spare account, not your main one." onPress={() => setSigningIn(true)} />
+              <SettingRow
+                title="Import cookies file"
+                subtitle="If Google blocks the sign-in here: export cookies.txt from youtube.com on a computer"
+                onPress={() => void importCookiesFile()}
+              />
+            </>
+          )}
+        </Group>
+
         <Group icon="graphic-eq" title="Playback">
           <SettingRow title="Playback speed" subtitle="Pitch stays natural" onPress={() => setSheet('speed')} right={<Badge label={`${rate}×`} />} />
           <SettingRow
@@ -146,6 +205,8 @@ export function SettingsScreen({ engine }: { engine: EngineState }) {
           <SettingRow title="Legal notice" subtitle="Personal use, privacy, file locations" onPress={() => setSheet('notice')} />
         </Group>
       </ScrollView>
+
+      <SignInScreen visible={signingIn} onClose={() => setSigningIn(false)} />
 
       <Sheet visible={sheet === 'speed'} title="Playback speed" onClose={() => setSheet(null)}>
         {SPEEDS.map((s) => (
