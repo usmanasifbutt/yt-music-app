@@ -29,7 +29,14 @@ A personal Android app for listening to music offline. Search YouTube, save song
 
 ## Screenshots
 
-_Coming soon._
+<p align="center">
+  <img src="docs/screenshots/home.jpg" alt="Home: recently played and suggestions by interest" width="19%">
+  <img src="docs/screenshots/search.jpg" alt="Search results with download buttons" width="19%">
+  <img src="docs/screenshots/library.jpg" alt="Library of downloaded songs" width="19%">
+  <img src="docs/screenshots/playlists.jpg" alt="Playlists" width="19%">
+  <img src="docs/screenshots/settings.jpg" alt="Settings" width="19%">
+</p>
+<p align="center"><sub>Home · Search · Library · Playlists · Settings</sub></p>
 
 ---
 
@@ -52,10 +59,28 @@ _Coming soon._
 
 YouTube changes often, and that can stop downloads from working. The app has a built-in download engine that you can update:
 
-- **Automatic:** the app checks for an engine update once a day when you open it.
+- **Automatic:** the app checks for an engine update once a day when you open it. It uses yt-dlp's nightly builds, which get YouTube fixes first.
 - **Manual:** go to **Settings → Download engine → Update**.
 
 If searches or downloads start failing, update the engine first. It fixes most problems.
+
+## YouTube sign-in (optional)
+
+On some networks, mobile data especially, YouTube answers downloads with **"Sign in to confirm you're not a bot"**. Signing in fixes that.
+
+> **Use a spare Google account, not your main one.** YouTube can limit or suspend accounts that download a lot.
+
+**How it works**
+1. Go to **Settings → YouTube account → Sign in**. Google's own sign-in page opens inside the app.
+2. Sign in as usual, including 2-step verification.
+3. Once YouTube opens signed in, the app keeps the YouTube session, wipes everything else from the sign-in page, and closes it.
+4. Downloads now go through as you, signed in.
+
+**What the app stores:** only the YouTube session (sign-in cookies), in one private file that only this app can read and that is never included in phone backups.
+
+**What it never stores:** your password, 2-step codes, your Google session (Gmail, Drive...), or your name and email. Your password is typed into Google's page, which the app can't read.
+
+**Sign out** in the same place removes the session from the phone. If Google blocks sign-in inside the app, you can import a cookies file from a computer instead. Details, and the risks to know about, are in [How sign-in works](docs/sign-in.md).
 
 ## Something not working?
 
@@ -66,6 +91,16 @@ If searches or downloads start failing, update the engine first. It fixes most p
    - The app version, shown at the top of **Home** and in **Settings → About**
    - Your phone model and Android version
    - Screenshots, if they help
+
+## How it works
+
+Short guides, if you want to know what happens behind the buttons:
+
+- [YouTube sign-in](docs/sign-in.md): the sign-in flow, what's stored and how it's protected
+- [Downloads and the engine](docs/downloads.md): how downloading works, engine updates, and YouTube's bot check
+- [Playlists](docs/playlists.md): playlist files, importing from YouTube, and Restore
+- [Permissions](docs/permissions.md): what the app asks for and why
+- [Storage](docs/storage.md): where files are saved and what stays on your phone
 
 ---
 
@@ -113,8 +148,8 @@ This app uses its own native code, so it doesn't run in the Expo Go app.
 | Platform | Android 7.0+ (64-bit phones) |
 | App size | About 136 MB. Most of that is the download engine built into the app. |
 | Where files are saved | Music/YT Music (audio) and Movies/YT Music (video) |
-| Accounts | None needed |
-| Data collected | None. Everything stays on your phone. |
+| Accounts | None needed. [YouTube sign-in](docs/sign-in.md) is optional. |
+| Data collected | None. Everything stays on your phone. The app only talks to YouTube and to GitHub (engine updates). |
 | Built with | React Native (Expo) and the open-source [yt-dlp](https://github.com/yt-dlp/yt-dlp) download engine |
 
 ## Legal notice
