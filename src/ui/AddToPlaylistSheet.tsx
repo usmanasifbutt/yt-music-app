@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { ScrollView, ToastAndroid } from 'react-native';
-import { addToPlaylist, createPlaylist, playlistsStore } from '../playlists';
+import { addToPlaylist, playlistsStore } from '../playlists';
 import { useStore } from '../store';
+import { createOrMerge } from './playlistNames';
 import { NameDialog, Sheet, SheetItem } from './Sheet';
 
 function toast(message: string) {
@@ -41,10 +42,9 @@ export function AddToPlaylistSheet({ keys, onClose }: { keys: string[] | null; o
         confirmLabel="Create"
         onCancel={() => setNaming(false)}
         onConfirm={(name) => {
-          createPlaylist(name, keys ?? []);
-          toast(`Created ${name}`);
           setNaming(false);
           onClose();
+          createOrMerge(name, keys ?? [], (p) => toast(p.merged ? `Added to ${p.name}` : `Created ${p.name}`));
         }}
       />
     </>

@@ -1,4 +1,5 @@
 import { Alert } from 'react-native';
+import { AUDIO_DIR, VIDEO_DIR } from '../appInfo';
 import { Track } from '../library';
 import { forgetTrack, addToQueue, playNext } from '../player';
 import { deleteTrackEverywhere } from '../playlists';
@@ -22,7 +23,7 @@ export function confirmDeleteTracks(tracks: Track[], onDone?: () => void) {
           Alert.alert(
             'Removed from library',
             `Android did not let the app delete ${refused === 1 ? 'one file' : `${refused} files`}. ` +
-              'You can delete them from the Files app in Music/YT Music or Movies/YT Music.'
+              `You can delete them from the Files app in ${AUDIO_DIR} or ${VIDEO_DIR}.`
           );
         }
       },

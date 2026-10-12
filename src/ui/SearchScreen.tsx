@@ -15,10 +15,11 @@ import {
 import { downloadKey, search, SearchResponse, SearchResult } from '../../modules/yt-dlp';
 import { downloadsStore, enqueueDownload, nativeErrorMessage, retryDownload } from '../downloads';
 import { getSetting, libraryStore, setSetting } from '../library';
-import { createPlaylist } from '../playlists';
+import { playlistNamed } from '../playlists';
 import { settingsStore } from '../settings';
 import { useStore, useStoreValue } from '../store';
 import { DownloadSheet } from './DownloadSheet';
+import { createOrMerge } from './playlistNames';
 import { Icon } from './Icon';
 import { Badge, Button, EmptyState, IconButton } from './kit';
 import { colors, formatTime, LIST_BOTTOM, radius, space, type } from './theme';
@@ -103,25 +104,28 @@ export function SearchScreen() {
     if (!playlist || !results.length) return;
     const saved = new Set(libraryStore.get().map((t) => t.key));
     const missing = results.filter((r) => !saved.has(downloadKey(r.id, 'audio')));
-    Alert.alert(
-      'Save as playlist?',
-      `Creates "${playlist.title}" with ${results.length} songs` +
-        (missing.length ? ` and downloads ${missing.length} as audio.` : '.'),
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Save',
-          onPress: () => {
-            createPlaylist(
-              playlist.title,
-              results.map((r) => downloadKey(r.id, 'audio'))
-            );
-            missing.forEach((r) => enqueueDownload(r, 'audio'));
-            ToastAndroid.show(`Saving "${playlist.title}" · see Library → Playlists`, ToastAndroid.LONG);
-          },
+    const keys = results.map((r) => downloadKey(r.id, 'audio'));
+    const downloads = missing.length ? ` and download ${missing.length} as audio` : '';
+
+    function save() {
+      createOrMerge(
+        playlist!.title,
+        keys,
+        (p) => {
+          // Already queued or saved songs are skipped, so importing again never downloads twice.
+          missing.forEach((r) => enqueueDownload(r, 'audio'));
+          ToastAndroid.show(`Saving "${p.name}" · see Library → Playlists`, ToastAndroid.LONG);
         },
-      ]
-    );
+        // Importing the same YouTube playlist again: offer to add its new songs to the one you have.
+        `You already have a playlist with this name. Add the missing songs to it${downloads}, or save a separate copy?`
+      );
+    }
+
+    if (playlistNamed(playlist.title)) return save();
+    Alert.alert('Save as playlist?', `Creates "${playlist.title}" with ${results.length} songs${downloads}.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Save', onPress: save },
+    ]);
   }
 
   const canLoadMore = !playlist && results.length >= limit && limit < MAX_RESULTS;

@@ -3,7 +3,7 @@ import { Alert, Linking, ScrollView, StyleSheet, Text, ToastAndroid, View } from
 import YtDlp from '../../modules/yt-dlp';
 import type { EngineState } from '../../App';
 import { accountStore, loadAccount, signOutOfYouTube } from '../account';
-import { VERSION_LABEL } from '../appInfo';
+import { AUDIO_DIR, VERSION_LABEL, VIDEO_DIR } from '../appInfo';
 import { nativeErrorMessage } from '../downloads';
 import { INTERESTS, interestsStore } from '../interests';
 import { libraryStore, markUpdated } from '../library';
@@ -167,7 +167,7 @@ export function SettingsScreen({ engine }: { engine: EngineState }) {
           />
         </Group>
 
-        <Group icon="storage" title="Storage" subtitle="Music/YT Music and Movies/YT Music" badge={formatBytes(totalSize(library))} badgeTone="success">
+        <Group icon="storage" title="Storage" subtitle={`${AUDIO_DIR} and ${VIDEO_DIR}`} badge={formatBytes(totalSize(library))} badgeTone="success">
           <View style={styles.stats}>
             <Stat label="Songs" value={audio.length} />
             <Stat label="Videos" value={videos.length} />
@@ -196,7 +196,7 @@ export function SettingsScreen({ engine }: { engine: EngineState }) {
           </View>
           <Text style={type.bodySm}>
             Clean up deletes items not played for {STALE_DAYS}+ days. Restore re-adds downloads and playlists found in the
-            folders, e.g. after reinstalling.
+            folders, e.g. after reinstalling, and removes duplicate playlist files.
           </Text>
         </Group>
 

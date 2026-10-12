@@ -6,6 +6,8 @@
 - **Add songs:** a song's ⋮ menu → *Add to playlist*, or long-press to select several. While playing, tap **Save**.
 - **From YouTube:** paste a YouTube or YouTube Music playlist link into Search, then tap **Save** on the playlist banner. The app creates the playlist and downloads any songs you don't have yet, as audio. Songs appear in the playlist as their downloads finish.
 
+Playlist names are unique (ignoring capital letters). If you create or import a playlist whose name is taken, the app asks whether to **add the songs to the existing one** or **create a new one** with a free name like "Gym 2". Importing the same YouTube playlist again is safe: it only adds and downloads songs you don't have yet.
+
 ## Where playlists are kept
 
 Each playlist lives in two places:
@@ -40,5 +42,7 @@ After a reinstall, or on a new phone with your Music and Movies folders copied o
 1. It finds your downloads in `Music/YT Music` and `Movies/YT Music`.
 2. It reads the playlist files and `All downloads.m3u` to work out which song is which, and rebuilds your playlists.
 3. Android then asks to let YT Music manage those files again. Files from an earlier install belong to that install, so without this the app can play them but not rename or delete them.
+
+Restore also **removes duplicate playlist files**, such as `Gym (1).m3u` or a second `All downloads.m3u`, which Android creates when a file with that name already belongs to an earlier install. Run it any time to tidy up.
 
 A fresh install offers to restore by itself when it finds earlier downloads.

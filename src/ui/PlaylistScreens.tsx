@@ -5,7 +5,6 @@ import { formatBytes, totalSize } from '../libraryView';
 import { playerStore, playList } from '../player';
 import {
   addToPlaylist,
-  createPlaylist,
   deletePlaylist,
   moveInPlaylist,
   Playlist,
@@ -18,6 +17,7 @@ import { useStore, useStoreValue } from '../store';
 import { AddToPlaylistSheet } from './AddToPlaylistSheet';
 import { Icon } from './Icon';
 import { Artwork, Badge, Button, EmptyState, IconButton } from './kit';
+import { createOrMerge, nameTaken } from './playlistNames';
 import { NameDialog, Sheet, SheetItem } from './Sheet';
 import { colors, formatTime, LIST_BOTTOM, radius, space, type } from './theme';
 import { TrackMenu } from './TrackMenu';
@@ -70,7 +70,7 @@ export function PlaylistsList({ onOpen }: { onOpen: (id: number) => void }) {
                 {item.name}
               </Text>
               <Text style={type.bodySm} numberOfLines={1}>
-                {tracks.length} tracks · {duration(tracks)}
+                {tracks.length} {tracks.length === 1 ? 'track' : 'tracks'} · {duration(tracks)}
                 {pending > 0 ? ` · ${pending} downloading` : ''}
               </Text>
             </Pressable>
@@ -84,7 +84,7 @@ export function PlaylistsList({ onOpen }: { onOpen: (id: number) => void }) {
         onCancel={() => setCreating(false)}
         onConfirm={(name) => {
           setCreating(false);
-          onOpen(createPlaylist(name));
+          createOrMerge(name, [], (p) => onOpen(p.id));
         }}
       />
     </>
@@ -242,6 +242,7 @@ export function PlaylistDetail({ id, onBack }: { id: number; onBack: () => void 
         initial={playlist.name}
         onCancel={() => setRenaming(false)}
         onConfirm={(name) => {
+          if (nameTaken(name, id)) return;
           renamePlaylist(id, name);
           setRenaming(false);
         }}

@@ -1,4 +1,5 @@
 import YtDlp from '../modules/yt-dlp';
+import { AUDIO_DIR } from './appInfo';
 import { db, getSetting, libraryStore, removeTrack, setSetting, Track } from './library';
 import { createStore } from './store';
 
@@ -38,6 +39,21 @@ export function playlistTracks(playlist: Playlist, library: Track[]): Track[] {
 }
 
 const find = (id: number) => playlistsStore.get().find((p) => p.id === id);
+
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** The playlist already using `name` (ignoring case and spaces), other than `exceptId`. */
+export function playlistNamed(name: string, exceptId?: number) {
+  return playlistsStore.get().find((p) => p.id !== exceptId && sameName(p.name, name));
+}
+
+/** `name` if it's free, otherwise "name 2", "name 3"... */
+export function freeName(name: string) {
+  const base = name.trim();
+  let candidate = base;
+  for (let n = 2; playlistNamed(candidate); n++) candidate = `${base} ${n}`;
+  return candidate;
+}
 
 function setKeys(id: number, keys: string[], write = true) {
   db.withTransactionSync(() => {
@@ -89,7 +105,12 @@ export async function deletePlaylist(id: number) {
     db.runSync('DELETE FROM playlists WHERE id = ?', [id]);
   });
   playlistsStore.set((prev) => prev.filter((p) => p.id !== id));
-  if (playlist?.m3uUri) await YtDlp.deleteMedia(playlist.m3uUri).catch(() => false);
+  const uri = playlist?.m3uUri;
+  if (!uri) return;
+  // A file from an earlier install needs Android's permission first; left behind, Restore
+  // would bring the playlist back.
+  const deleted = await YtDlp.deleteMedia(uri).catch(() => false);
+  if (!deleted && (await YtDlp.requestWriteAccess([uri]))) await YtDlp.deleteMedia(uri).catch(() => false);
 }
 
 /** Appends keys that aren't already in the playlist. Returns how many were added. */
@@ -151,7 +172,7 @@ export function refreshAll() {
   syncAllM3u();
 }
 
-const PLAYLIST_DIR = 'Music/YT Music';
+const PLAYLIST_DIR = AUDIO_DIR;
 
 // Path of a media file as seen from the .m3u, which lives in Music/YT Music/.
 function relativeToPlaylist(mediaPath: string) {

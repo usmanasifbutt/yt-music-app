@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AUDIO_DIR, VIDEO_DIR } from '../appInfo';
 import { updateSettings } from '../settings';
 import { Icon, IconName } from './Icon';
 import { Button, Card } from './kit';
@@ -20,7 +21,7 @@ export const NOTICE_POINTS: { icon: IconName; title: string; text: string }[] = 
   {
     icon: 'folder',
     title: 'Where files go',
-    text: 'Audio is saved to Music/YT Music and video to Movies/YT Music, so other players can use them too.',
+    text: `Audio is saved to ${AUDIO_DIR} and video to ${VIDEO_DIR}, so other players can use them too.`,
   },
 ];
 

@@ -28,7 +28,6 @@ import java.io.File
 class YtDlpException(message: String, cause: Throwable? = null) :
   CodedException("ERR_YTDLP", message, cause)
 
-private const val PUBLIC_FOLDER = "YT Music"
 private const val WRITE_REQUEST_CODE = 4202
 private const val IMPORT_COOKIES_REQUEST_CODE = 4203
 private const val MAX_PLAYLIST_BYTES = 2_000_000
@@ -40,6 +39,13 @@ class YtDlpModule : Module() {
 
   @Volatile
   private var initialized = false
+
+  /**
+   * Folder inside Music/ and Movies/. The beta build (package "*.beta") uses its own, so it
+   * never clashes with the real app's files (which it isn't allowed to change).
+   */
+  private val publicFolder: String
+    get() = if (context.packageName.endsWith(".beta")) "YT Music Beta" else "YT Music"
 
   private var pendingWriteRequest: Promise? = null
   private var pendingImport: Promise? = null
@@ -68,7 +74,7 @@ class YtDlpModule : Module() {
     )
     val items = mutableListOf<Map<String, Any?>>()
     context.contentResolver.query(
-      collection, projection, "${MediaStore.MediaColumns.RELATIVE_PATH} = ?", arrayOf("$top/$PUBLIC_FOLDER/"), null
+      collection, projection, "${MediaStore.MediaColumns.RELATIVE_PATH} = ?", arrayOf("$top/$publicFolder/"), null
     )?.use { c ->
       while (c.moveToNext()) {
         val id = c.getLong(0)
@@ -99,7 +105,7 @@ class YtDlpModule : Module() {
     val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} = ? AND ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
     val items = mutableListOf<Map<String, Any?>>()
     context.contentResolver.query(
-      collection, projection, selection, arrayOf("${Environment.DIRECTORY_MUSIC}/$PUBLIC_FOLDER/", "%.m3u"), null
+      collection, projection, selection, arrayOf("${Environment.DIRECTORY_MUSIC}/$publicFolder/", "%.m3u"), null
     )?.use { c ->
       while (c.moveToNext()) {
         if (!c.isNull(3) && c.getLong(3) > MAX_PLAYLIST_BYTES) continue
@@ -201,11 +207,11 @@ class YtDlpModule : Module() {
       val values = ContentValues().apply {
         put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
         put(MediaStore.MediaColumns.MIME_TYPE, mime)
-        put(MediaStore.MediaColumns.RELATIVE_PATH, "$subdir/$PUBLIC_FOLDER")
+        put(MediaStore.MediaColumns.RELATIVE_PATH, "$subdir/$publicFolder")
         put(MediaStore.MediaColumns.IS_PENDING, 1)
       }
       val uri = resolver.insert(collection, values)
-        ?: throw YtDlpException("Could not create a file in $subdir/$PUBLIC_FOLDER")
+        ?: throw YtDlpException("Could not create a file in $subdir/$publicFolder")
       try {
         resolver.openOutputStream(uri)!!.use { out -> src.inputStream().use { it.copyTo(out) } }
         // Clearing IS_PENDING makes the scanner read the embedded title/artist tags.
@@ -219,7 +225,7 @@ class YtDlpModule : Module() {
 
     // Android 9 and older: app-specific external dir needs no permission and is still
     // reachable from file managers (Android/data/<package>/files/Music/...).
-    val dir = File(context.getExternalFilesDir(subdir), PUBLIC_FOLDER).apply { mkdirs() }
+    val dir = File(context.getExternalFilesDir(subdir), publicFolder).apply { mkdirs() }
     var dest = File(dir, fileName)
     var n = 1
     while (dest.exists()) dest = File(dir, "${safeName(baseName)} (${n++}).${src.extension}")
@@ -375,7 +381,7 @@ class YtDlpModule : Module() {
           val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
             put(MediaStore.MediaColumns.MIME_TYPE, "audio/x-mpegurl")
-            put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/$PUBLIC_FOLDER")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/$publicFolder")
           }
           val uri = resolver.insert(MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values)
             ?: throw YtDlpException("Could not create playlist file")
@@ -383,7 +389,7 @@ class YtDlpModule : Module() {
           uri.toString()
         } else {
           existingUri?.let { File(Uri.parse(it).path ?: it).delete() }
-          val dir = File(context.getExternalFilesDir(Environment.DIRECTORY_MUSIC), PUBLIC_FOLDER).apply { mkdirs() }
+          val dir = File(context.getExternalFilesDir(Environment.DIRECTORY_MUSIC), publicFolder).apply { mkdirs() }
           val dest = File(dir, fileName).apply { writeBytes(bytes) }
           MediaScannerConnection.scanFile(context, arrayOf(dest.absolutePath), arrayOf("audio/x-mpegurl"), null)
           "file://${dest.absolutePath}"

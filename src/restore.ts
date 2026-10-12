@@ -18,6 +18,8 @@ export type RestoreResult = {
   playlists: number;
   /** Whether Android let the app take over the old files (so it can update/delete them). */
   writeAccess: boolean;
+  /** Duplicate playlist files deleted (copies like "Gym (1).m3u" or extra "All downloads"). */
+  cleaned: number;
 };
 
 /** Read access to downloads left by an earlier install (they belong to that install). */
@@ -175,11 +177,16 @@ export async function restoreFromDevice(): Promise<RestoreResult> {
     extraFiles.push(...copies.map(({ file }) => file.uri));
   }
 
-  takeover.push(...toCreate.map(({ file }) => file.uri), ...extraFiles);
+  // Never delete a file a playlist in the app is using (e.g. two playlists that share a name).
+  const inUse = new Set(playlistsStore.get().map((p) => p.m3uUri));
+  const stale = extraFiles.filter((uri) => !inUse.has(uri));
+
+  takeover.push(...toCreate.map(({ file }) => file.uri), ...stale);
   if (keepIndex) takeover.push(keepIndex.file.uri);
 
   // One system dialog lets the app update/delete the old files again (Android 11+).
   const writeAccess = takeover.length ? await YtDlp.requestWriteAccess(takeover) : true;
+  let cleaned = 0;
 
   addTracks(newTracks);
   for (const { file, entries } of toCreate) {
@@ -192,11 +199,12 @@ export async function restoreFromDevice(): Promise<RestoreResult> {
   }
   if (writeAccess) {
     if (keepIndex) setSetting('libraryIndexUri', keepIndex.file.uri);
-    await Promise.all(extraFiles.map((uri) => YtDlp.deleteMedia(uri).catch(() => false)));
+    const deleted = await Promise.all(stale.map((uri) => YtDlp.deleteMedia(uri).catch(() => false)));
+    cleaned = deleted.filter(Boolean).length;
     syncAllM3u();
   }
 
-  return { tracks: newTracks.length, playlists: toCreate.length, writeAccess };
+  return { tracks: newTracks.length, playlists: toCreate.length, writeAccess, cleaned };
 }
 
 type Parsed = { file: ScannedPlaylist; entries: Entry[] };

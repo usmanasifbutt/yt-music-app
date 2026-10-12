@@ -18,6 +18,7 @@ Movies/
 - Files are named "Title - Artist", with characters Android doesn't allow in file names replaced.
 - Each file has its title and artist written inside it, so other music players show them properly.
 - Because they're ordinary files, you can copy them to a computer, back them up, or play them in any app.
+- Test builds ("YT Music Beta") use `Music/YT Music Beta` and `Movies/YT Music Beta`, so they never mix with your real library.
 - On **Android 9 and older**, Android doesn't let apps add to these folders without extra permission, so files go to `Android/data/com.local.ytmusicoffline/files/Music/YT Music` (and `.../Movies/YT Music`) instead. File managers can still open them there.
 
 ## The app's private storage

@@ -1,4 +1,5 @@
 import { Alert, ToastAndroid } from 'react-native';
+import { AUDIO_DIR, VIDEO_DIR } from '../appInfo';
 import { nativeErrorMessage } from '../downloads';
 import { getSetting, libraryStore, setSetting } from '../library';
 import { playlistsStore } from '../playlists';
@@ -14,15 +15,21 @@ export async function runRestore() {
     return;
   }
   try {
-    ToastAndroid.show('Looking in Music/YT Music and Movies/YT Music…', ToastAndroid.SHORT);
-    const { tracks, playlists, writeAccess } = await restoreFromDevice();
+    ToastAndroid.show(`Looking in ${AUDIO_DIR} and ${VIDEO_DIR}…`, ToastAndroid.SHORT);
+    const { tracks, playlists, writeAccess, cleaned } = await restoreFromDevice();
+    const tidied = cleaned ? `Removed ${cleaned} duplicate playlist ${cleaned === 1 ? 'file' : 'files'}.` : '';
     if (!tracks && !playlists) {
-      Alert.alert('Nothing to restore', 'Everything in Music/YT Music and Movies/YT Music is already in your library.');
+      if (tidied) {
+        Alert.alert('Tidied up', `${tidied} Your library was already complete.`);
+        return;
+      }
+      Alert.alert('Nothing to restore', `Everything in ${AUDIO_DIR} and ${VIDEO_DIR} is already in your library.`);
       return;
     }
     Alert.alert(
       'Restored',
       `Added ${tracks} ${tracks === 1 ? 'item' : 'items'} and ${playlists} ${playlists === 1 ? 'playlist' : 'playlists'}.` +
+        (tidied ? ` ${tidied}` : '') +
         (writeAccess
           ? ''
           : '\n\nWithout permission to modify the old files, the app will save new copies of the playlist files, and deleting old songs from the app may not work.')
@@ -42,7 +49,7 @@ export function offerRestoreOnFreshInstall() {
   setSetting('restoreOffered', true);
   Alert.alert(
     'Restore your music?',
-    'If you used YT Music before on this phone, it can bring back your downloads and playlists from Music/YT Music and Movies/YT Music.',
+    `If you used YT Music before on this phone, it can bring back your downloads and playlists from ${AUDIO_DIR} and ${VIDEO_DIR}.`,
     [
       { text: 'Not now', style: 'cancel' },
       { text: 'Restore', onPress: () => void runRestore() },
