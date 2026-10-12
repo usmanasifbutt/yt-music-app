@@ -13,14 +13,14 @@ import {
   View,
 } from 'react-native';
 import { downloadKey, search, SearchResponse, SearchResult } from '../../modules/yt-dlp';
-import { downloadsStore, enqueueDownload, nativeErrorMessage } from '../downloads';
+import { downloadsStore, enqueueDownload, nativeErrorMessage, retryDownload } from '../downloads';
 import { getSetting, libraryStore, setSetting } from '../library';
 import { createPlaylist } from '../playlists';
 import { settingsStore } from '../settings';
 import { useStore, useStoreValue } from '../store';
 import { DownloadSheet } from './DownloadSheet';
 import { Icon } from './Icon';
-import { Badge, Button, Chip, ChipRow, EmptyState, IconButton } from './kit';
+import { Badge, Button, EmptyState, IconButton } from './kit';
 import { colors, formatTime, LIST_BOTTOM, radius, space, type } from './theme';
 
 const PAGE = 25;
@@ -236,7 +236,18 @@ const SearchRow = memo(function SearchRow({
   const active = useStoreValue(downloadsStore, (all) =>
     Object.values(all).find((d) => d.item.id === item.id && d.status !== 'error')
   );
+  const failed = useStoreValue(downloadsStore, (all) =>
+    Object.values(all).find((d) => d.item.id === item.id && d.status === 'error')
+  );
   const saved = savedLabels ? savedLabels.split(',') : [];
+
+  function onPressDownload() {
+    if (!failed || active) return onDownload(item);
+    Alert.alert('Download failed', failed.error, [
+      { text: 'Close', style: 'cancel' },
+      { text: 'Retry', onPress: () => retryDownload(failed.key) },
+    ]);
+  }
 
   return (
     <Pressable style={styles.row} onPress={() => onOpen(item)}>
@@ -260,9 +271,13 @@ const SearchRow = memo(function SearchRow({
         )}
       </View>
       <Pressable
-        style={[styles.download, saved.length > 0 && { backgroundColor: colors.successSoft }]}
+        style={[
+          styles.download,
+          saved.length > 0 && { backgroundColor: colors.successSoft },
+          failed && !active && { backgroundColor: colors.accentSoft },
+        ]}
         hitSlop={6}
-        onPress={() => onDownload(item)}
+        onPress={onPressDownload}
         onLongPress={() => onOpen(item)}>
         {active ? (
           active.status === 'queued' ? (
@@ -270,6 +285,8 @@ const SearchRow = memo(function SearchRow({
           ) : (
             <Text style={[type.labelMd, { color: colors.success }]}>{Math.round(active.progress)}%</Text>
           )
+        ) : failed ? (
+          <Icon name="error-outline" size={22} color={colors.accent} />
         ) : (
           <Icon name={saved.length ? 'download-done' : 'file-download'} size={22} color={saved.length ? colors.success : colors.text} />
         )}

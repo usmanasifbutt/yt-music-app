@@ -37,6 +37,7 @@ export type EngineState = 'loading' | 'updating' | 'ready' | { error: string };
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('home');
+  const [visited, setVisited] = useState<Set<Tab>>(() => new Set(['home']));
   const [engine, setEngine] = useState<EngineState>('loading');
   const [libraryLoaded, setLibraryLoaded] = useState(false);
   const { consentAccepted } = useStore(settingsStore);
@@ -84,6 +85,11 @@ export default function App() {
     );
   }
 
+  function openTab(next: Tab) {
+    setTab(next);
+    if (!visited.has(next)) setVisited(new Set(visited).add(next));
+  }
+
   const current = TABS.find((t) => t.key === tab)!;
 
   return (
@@ -107,24 +113,34 @@ export default function App() {
             )}
           </View>
         )}
-        <View style={{ flex: 1 }}>
-          {tab === 'home' ? (
+        {/* Visited tabs stay mounted (just hidden), so search results and scroll positions survive tab switches. */}
+        {visited.has('home') && (
+          <View style={[styles.screen, tab !== 'home' && styles.hidden]}>
             <HomeScreen />
-          ) : tab === 'search' ? (
+          </View>
+        )}
+        {visited.has('search') && (
+          <View style={[styles.screen, tab !== 'search' && styles.hidden]}>
             <SearchScreen />
-          ) : tab === 'library' ? (
-            <LibraryScreen onGoSearch={() => setTab('search')} />
-          ) : (
+          </View>
+        )}
+        {visited.has('library') && (
+          <View style={[styles.screen, tab !== 'library' && styles.hidden]}>
+            <LibraryScreen onGoSearch={() => openTab('search')} />
+          </View>
+        )}
+        {visited.has('settings') && (
+          <View style={[styles.screen, tab !== 'settings' && styles.hidden]}>
             <SettingsScreen engine={engine} />
-          )}
-        </View>
+          </View>
+        )}
         <MiniPlayer />
         <View style={styles.tabs}>
           {TABS.map((t) => {
             const active = tab === t.key;
             const color = active ? colors.accent : colors.muted;
             return (
-              <Pressable key={t.key} style={styles.tab} onPress={() => setTab(t.key)}>
+              <Pressable key={t.key} style={styles.tab} onPress={() => openTab(t.key)}>
                 <View>
                   <Icon name={t.icon} size={24} color={color} />
                   {t.key === 'library' && activeDownloads > 0 && (
@@ -145,6 +161,8 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
+  screen: { flex: 1 },
+  hidden: { display: 'none' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

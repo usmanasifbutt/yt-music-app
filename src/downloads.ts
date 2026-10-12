@@ -1,4 +1,4 @@
-import { PermissionsAndroid, Platform } from 'react-native';
+import { PermissionsAndroid, Platform, ToastAndroid } from 'react-native';
 import YtDlp, { downloadKey, MediaKind, SearchResult } from '../modules/yt-dlp';
 import { addTrack, libraryStore } from './library';
 import { trackAdded } from './playlists';
@@ -12,6 +12,7 @@ export type DownloadState = {
   height: number;
   status: 'queued' | 'downloading' | 'error';
   progress: number;
+  /** Why it failed; on a queued item, why the last attempt failed (it will be retried). */
   error?: string;
 };
 
@@ -23,16 +24,19 @@ const GAP_MS = { normal: [4_000, 7_000], bulk: [15_000, 30_000] } as const;
 /** More waiting items than this switches to one-at-a-time with the bulk gap. */
 const BULK_THRESHOLD = 3;
 const BOT_PAUSE_MIN = [5, 15, 30];
-const isBotCheck = (message: string) => /not a bot|sign in to confirm/i.test(message);
+// Not "Sign in to confirm" alone: that also starts "Sign in to confirm your age", which waiting won't fix.
+const isBotCheck = (message: string) => /not a bot/i.test(message);
 
 export type QueuePause = {
   /** Paused until this time (epoch ms), then resumes on its own. */
   until: number | null;
   /** Stopped after the longest pause; waits for the user to tap Resume. */
   stopped: boolean;
+  /** YouTube's message that caused the pause. */
+  reason: string | null;
 };
 
-export const queuePauseStore = createStore<QueuePause>({ until: null, stopped: false });
+export const queuePauseStore = createStore<QueuePause>({ until: null, stopped: false, reason: null });
 
 /** How many bot-check pauses in a row (index into BOT_PAUSE_MIN). Reset by any success. */
 let pauseLevel = 0;
@@ -80,7 +84,7 @@ function pump() {
   const { until, stopped } = queuePauseStore.get();
   if (stopped) return;
   if (until && now < until) return pumpLater(until - now);
-  if (until) queuePauseStore.set({ until: null, stopped: false });
+  if (until) queuePauseStore.set({ until: null, stopped: false, reason: null });
 
   const all = Object.values(downloadsStore.get());
   const active = all.filter((d) => d.status === 'downloading').length;
@@ -98,18 +102,21 @@ function pump() {
 }
 
 /** YouTube refused with its bot check: wait longer each time. */
-function pauseForBotCheck() {
+function pauseForBotCheck(reason: string) {
   if (pauseLevel >= BOT_PAUSE_MIN.length) {
-    queuePauseStore.set({ until: null, stopped: true });
+    queuePauseStore.set({ until: null, stopped: true, reason });
     return;
   }
   const until = Date.now() + BOT_PAUSE_MIN[pauseLevel] * 60_000;
   pauseLevel++;
-  queuePauseStore.set((s) => ({ until: Math.max(s.until ?? 0, until), stopped: false }));
+  queuePauseStore.set((s) => ({ until: Math.max(s.until ?? 0, until), stopped: false, reason }));
 }
 
+const othersWaiting = (key: string) =>
+  Object.values(downloadsStore.get()).some((d) => d.key !== key && d.status === 'queued');
+
 async function run({ key, item, kind, height }: DownloadState) {
-  patch(key, { status: 'downloading', progress: 0 });
+  patch(key, { status: 'downloading', progress: 0, error: undefined });
   try {
     const baseName = `${item.title} - ${item.artist}`;
     const { uri, thumbnailPath, size } = await YtDlp.download(key, item.id, kind, height, baseName);
@@ -134,11 +141,16 @@ async function run({ key, item, kind, height }: DownloadState) {
   } catch (e: any) {
     const message = nativeErrorMessage(e);
     if (message === 'Canceled') remove(key);
-    else if (isBotCheck(message)) {
-      // Keep it queued and hold the whole queue for a while.
-      patch(key, { status: 'queued', progress: 0 });
-      pauseForBotCheck();
-    } else patch(key, { status: 'error', error: message });
+    else if (isBotCheck(message) && othersWaiting(key)) {
+      // Keep it queued (with the reason) and hold the whole queue for a while.
+      // A lone download just fails, so the error shows right away.
+      patch(key, { status: 'queued', progress: 0, error: message });
+      pauseForBotCheck(message);
+    } else {
+      patch(key, { status: 'error', error: message });
+      ToastAndroid.show(`Download failed: ${item.title}
+${message}`, ToastAndroid.LONG);
+    }
   }
   pump();
 }
@@ -178,7 +190,7 @@ export function retryDownload(key: string) {
 
 /** Skip the wait after YouTube's bot check, or restart a stopped queue (Downloads view). */
 export function resumeQueueNow() {
-  queuePauseStore.set({ until: null, stopped: false });
+  queuePauseStore.set({ until: null, stopped: false, reason: null });
   pauseLevel = 0;
   nextStartAt = 0;
   pump();

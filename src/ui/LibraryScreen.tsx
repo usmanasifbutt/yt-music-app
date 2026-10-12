@@ -289,7 +289,7 @@ function ActionButton({
 
 /** Shown while the queue waits after YouTube's "confirm you're not a bot" check. */
 function PausedBanner() {
-  const { until, stopped } = useStore(queuePauseStore);
+  const { until, stopped, reason } = useStore(queuePauseStore);
   if (!until && !stopped) return null;
   const at = until ? new Date(until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
   return (
@@ -302,6 +302,11 @@ function PausedBanner() {
             ? 'Your songs are kept in the queue. Try again later, or after switching network.'
             : `Downloads continue automatically at ${at}.`}
         </Text>
+        {reason && (
+          <Text style={[type.bodySm, { color: colors.accent, marginTop: 4 }]} numberOfLines={3}>
+            YouTube: {reason}
+          </Text>
+        )}
       </View>
       <Button label={stopped ? 'Resume' : 'Retry now'} variant="secondary" onPress={resumeQueueNow} />
     </View>
@@ -328,8 +333,8 @@ function DownloadsList({ onGoSearch }: { onGoSearch: () => void }) {
       renderItem={({ item: d }) => (
         <Pressable
           style={styles.download}
-          disabled={d.status !== 'error'}
-          onPress={() => Alert.alert('Download failed', d.error)}>
+          disabled={!d.error}
+          onPress={() => Alert.alert(d.status === 'error' ? 'Download failed' : 'Last try failed', d.error)}>
           <View style={styles.downloadTop}>
             <Artwork uris={[d.item.thumbnail]} size={48} />
             <View style={{ flex: 1 }}>
@@ -352,10 +357,12 @@ function DownloadsList({ onGoSearch }: { onGoSearch: () => void }) {
               <Text style={type.bodySm}>{Math.round(d.progress)}%</Text>
             </>
           ) : (
-            <Text style={[type.bodySm, d.status === 'error' && { color: colors.accent }]} numberOfLines={2}>
+            <Text style={[type.bodySm, d.error && { color: colors.accent }]} numberOfLines={2}>
               {d.status === 'error'
                 ? `${d.error} · tap for details`
-                : 'Waiting…'}
+                : d.error
+                  ? `Waiting to retry · ${d.error}`
+                  : 'Waiting…'}
             </Text>
           )}
         </Pressable>
