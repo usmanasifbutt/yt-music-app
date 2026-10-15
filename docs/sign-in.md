@@ -12,7 +12,7 @@ Signing in is optional. It's there for one problem: on some networks, mobile dat
    - copies the **YouTube session cookies** (a long-lived "you're signed in" token) into one private file,
    - **wipes everything else** the sign-in page stored, including the Google session that could open Gmail or Drive,
    - closes the page.
-4. From then on, each download hands that session to the download engine, which sends it to YouTube.
+4. From then on, each download and each song you [play without downloading](streaming.md) hands that session to the download engine, which sends it to YouTube.
 
 The sign-in page runs in a fresh, private browser session. It saves no passwords or form data, and it only opens Google and YouTube pages; any other link is blocked.
 
@@ -30,7 +30,7 @@ That file:
 - can only be read by this app (Android keeps each app's private storage separate),
 - is **excluded from phone backups**, so it never goes to Google Drive or a backup file,
 - is never shown in the app, in errors or in logs. The app's interface only ever knows "signed in" or "signed out",
-- is used for downloads only, never for search.
+- is used for playing and downloading only, never for search.
 
 During a download the engine works on a temporary copy of the file, which is deleted when the download ends. YouTube refreshes some cookies as you use it, so a successful download saves the refreshed ones back.
 

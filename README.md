@@ -13,8 +13,14 @@ A personal Android app for listening to music offline. Search YouTube, save song
 - Paste a YouTube link (a single video or a whole playlist)
 - A Home screen with suggestions based on the interests you pick, plus "Because you played…" mixes
 
+**Play without downloading**
+- Tap any song to play it straight away, streamed from YouTube
+- Switch between audio and the song's video, with full screen and a choice of quality
+- Autoplay keeps going with related songs when your list ends
+
 **Save it to your phone**
 - Download as audio, or as video in 360p, 720p or 1080p
+- Download the song that's playing without interrupting it
 - Downloads keep going when you leave the app
 - Files go to your phone's **Music** and **Movies** folders, so other music players can use them too
 
@@ -61,6 +67,7 @@ YouTube changes often, and that can stop downloads from working. The app has a b
 
 - **Automatic:** the app checks for an engine update once a day when you open it. It uses yt-dlp's nightly builds, which get YouTube fixes first.
 - **Manual:** go to **Settings → Download engine → Update**.
+- **Speed test:** **Settings → Download engine → Speed test** shows how long starting a song takes on your connection.
 
 If searches or downloads start failing, update the engine first. It fixes most problems.
 
@@ -74,7 +81,7 @@ On some networks, mobile data especially, YouTube answers downloads with **"Sign
 1. Go to **Settings → YouTube account → Sign in**. Google's own sign-in page opens inside the app.
 2. Sign in as usual, including 2-step verification.
 3. Once YouTube opens signed in, the app keeps the YouTube session, wipes everything else from the sign-in page, and closes it.
-4. Downloads now go through as you, signed in.
+4. Playing and downloading now go through as you, signed in.
 
 **What the app stores:** only the YouTube session (sign-in cookies), in one private file that only this app can read and that is never included in phone backups.
 
@@ -97,6 +104,7 @@ On some networks, mobile data especially, YouTube answers downloads with **"Sign
 Short guides, if you want to know what happens behind the buttons:
 
 - [YouTube sign-in](docs/sign-in.md): the sign-in flow, what's stored and how it's protected
+- [Playing without downloading](docs/streaming.md): streaming, audio and video, quality, Autoplay and data use
 - [Downloads and the engine](docs/downloads.md): how downloading works, engine updates, and YouTube's bot check
 - [Playlists](docs/playlists.md): playlist files, importing from YouTube, and Restore
 - [Permissions](docs/permissions.md): what the app asks for and why

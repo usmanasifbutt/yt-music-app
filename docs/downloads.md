@@ -34,13 +34,18 @@ If downloads start failing, updating the engine is the first thing to try.
 4. It writes the title and artist into the file, and saves the cover image for the app.
 5. The file is copied into your phone's **Music** or **Movies** folder (see [Storage](storage.md)) and added to your library, and any playlists waiting for it are updated.
 
-Downloads keep going when you leave the app or turn the screen off; a notification shows their progress.
+Downloads keep going when you leave the app or turn the screen off; a notification shows their progress. Downloading the song that's playing doesn't interrupt it.
+
+**Starting quickly.** Before any data arrives the row shows *Starting…* while the engine looks the song up. That's faster when:
+- you've just played the song or checked its download sizes: the download reuses that lookup and starts straight away (if those links have expired, it simply looks the song up again);
+- the engine has run before: it keeps YouTube's player code in a cache instead of fetching it every time.
 
 ## Pacing, and YouTube's bot check
 
 Many downloads in a row can make YouTube ask you to "confirm you're not a bot". To avoid that, the queue paces itself:
 
 - A short random pause (a few seconds) between downloads.
+- During a big queue, the engine also waits a second between its own requests to YouTube. Single downloads skip that wait, so they start faster.
 - **Settings → Simultaneous downloads** sets how many run at once (1–3).
 - With more than 3 songs waiting, for example after importing a playlist, it switches to **one at a time** with longer pauses (15–30 seconds).
 

@@ -32,8 +32,10 @@ Only YT Music can read this. Android deletes it when you uninstall the app.
 | Download engine | yt-dlp, Python and ffmpeg, unpacked on first launch |
 | `youtube-cookies.txt` | Only if you [sign in](sign-in.md). Kept out of phone backups. |
 | Temporary download folder | Used while a download is in progress, emptied when it finishes |
+| Engine cache | YouTube's player code, reused between lookups so songs start faster. Android may clear it when space runs low. |
+| Video quality playlists | Small trimmed copies of a video's playlist, made when you pick a fixed [video quality](streaming.md#audio-and-video) |
 
-Nothing is sent anywhere except to YouTube (searching and downloading) and GitHub (engine updates). The app has no server, no analytics and no ads.
+Nothing is sent anywhere except to YouTube (searching, playing and downloading) and GitHub (engine updates). The app has no server, no analytics and no ads.
 
 ## Uninstalling and reinstalling
 
