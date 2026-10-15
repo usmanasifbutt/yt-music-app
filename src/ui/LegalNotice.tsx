@@ -16,7 +16,7 @@ export const NOTICE_POINTS: { icon: IconName; title: string; text: string }[] = 
   {
     icon: 'phonelink-lock',
     title: 'Everything stays on your phone',
-    text: 'Search and downloads run on this device with the open-source yt-dlp engine. No account, no tracking, nothing sent anywhere else.',
+    text: 'Search, playback and downloads run on this device with the open-source yt-dlp engine. No app account and no tracking: the app only talks to YouTube, and to GitHub for engine updates.',
   },
   {
     icon: 'folder',

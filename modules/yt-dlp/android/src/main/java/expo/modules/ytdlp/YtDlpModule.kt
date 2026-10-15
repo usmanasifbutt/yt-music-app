@@ -24,12 +24,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 
 class YtDlpException(message: String, cause: Throwable? = null) :
   CodedException("ERR_YTDLP", message, cause)
 
 private const val WRITE_REQUEST_CODE = 4202
 private const val IMPORT_COOKIES_REQUEST_CODE = 4203
+/** The one YouTube client tried first for stream lookups (see videoInfo). */
+private const val FAST_CLIENT = "tv_samsung"
 private const val MAX_PLAYLIST_BYTES = 2_000_000
 
 class YtDlpModule : Module() {
@@ -49,6 +53,7 @@ class YtDlpModule : Module() {
 
   private var pendingWriteRequest: Promise? = null
   private var pendingImport: Promise? = null
+  private val infoLocks = java.util.concurrent.ConcurrentHashMap<String, Any>()
 
   /** The cookies file just imported, so the app can offer to delete the original. */
   @Volatile
@@ -149,6 +154,73 @@ class YtDlpModule : Module() {
     val cookies = YouTubeAccount.startRun(context, key) ?: return null
     request.addOption("--cookies", cookies.absolutePath)
     return cookies
+  }
+
+  private fun watchUrl(id: String) = "https://www.youtube.com/watch?v=$id"
+
+  /**
+   * youtubedl-android turns yt-dlp's cache off, so every run would fetch YouTube's player code
+   * again and re-solve its challenges (slow on a phone with QuickJS). Reusing them saves seconds.
+   */
+  private fun useCache(request: YoutubeDLRequest) {
+    request.addOption("--cache-dir", File(context.cacheDir, "yt-dlp-cache").absolutePath)
+  }
+
+  /**
+   * yt-dlp's full info for a video, reused for a while (see VideoInfoCache).
+   * `fast` asks YouTube with only FAST_CLIENT instead of yt-dlp's default set. Signed in, the
+   * default set includes web_embedded, whose JavaScript challenge takes QuickJS 10+ seconds
+   * on a phone; tv_samsung works signed in and needs none. Callers fall back to the full set.
+   */
+  private fun videoInfo(id: String, fast: Boolean = false): String =
+    // One lookup per video at a time: a tap during a prefetch waits for it and reuses the result.
+    synchronized(infoLocks.computeIfAbsent(id) { Any() }) { lookUp(id, fast) }
+
+  private fun lookUp(id: String, fast: Boolean): String {
+    VideoInfoCache.get(id)?.let { return it }
+    val request = YoutubeDLRequest(watchUrl(id)).apply {
+      addOption("-J")
+      addOption("--no-playlist")
+      if (fast) addOption("--extractor-args", "youtube:player_client=$FAST_CLIENT")
+    }
+    useCache(request)
+    val cookies = addAccount(request, "info-$id")
+    var ok = false
+    try {
+      val json = VideoInfo.withoutCookies(run(request))
+      ok = true
+      VideoInfoCache.put(id, json)
+      return json
+    } finally {
+      cookies?.let { YouTubeAccount.finishRun(context, it, ok) }
+    }
+  }
+
+  /**
+   * Writes a copy of YouTube's HLS master playlist that offers only one picture quality (see
+   * VideoInfo.limitQuality) and returns (quality, file URI), or null if that isn't possible.
+   */
+  private fun limitedPlaylist(id: String, masterUrl: String, headers: Map<String, String>, maxHeight: Int): Pair<Int, String>? {
+    val master = try {
+      (URL(masterUrl).openConnection() as HttpURLConnection).run {
+        connectTimeout = 15_000
+        readTimeout = 15_000
+        headers.forEach { (name, value) -> setRequestProperty(name, value) }
+        try {
+          inputStream.bufferedReader().use { it.readText() }
+        } finally {
+          disconnect()
+        }
+      }
+    } catch (e: Exception) {
+      return null
+    }
+    val (height, text) = VideoInfo.limitQuality(master, maxHeight) ?: return null
+    val file = File(context.cacheDir, "hls/$id-$height.m3u8").apply {
+      parentFile?.mkdirs()
+      writeText(text)
+    }
+    return height to "file://${file.absolutePath}"
   }
 
   private fun run(request: YoutubeDLRequest): String {
@@ -285,23 +357,45 @@ class YtDlpModule : Module() {
     AsyncFunction("formats") Coroutine { id: String ->
       withContext(Dispatchers.IO) {
         ensureInit()
-        val request = YoutubeDLRequest("https://www.youtube.com/watch?v=$id").apply {
-          addOption("-J")
-          addOption("--no-playlist")
-        }
-        val cookies = addAccount(request, "formats-$id")
-        var ok = false
         try {
-          run(request).also { ok = true }
-        } finally {
-          cookies?.let { YouTubeAccount.finishRun(context, it, ok) }
+          videoInfo(id, fast = true)
+        } catch (e: Exception) {
+          videoInfo(id)
         }
+      }
+    }
+
+    // A stream link for playing without downloading: { url, headers, hls, height, duration }.
+    // `maxHeight` > 0 (video only) limits the picture quality; 0 lets the player adapt.
+    AsyncFunction("stream") Coroutine { id: String, kind: String, maxHeight: Int ->
+      withContext(Dispatchers.IO) {
+        ensureInit()
+        // Quick lookup first; if it fails or lacks the stream, ask again with every client.
+        var stream = try {
+          VideoInfo.pickStream(videoInfo(id, fast = true), kind)
+        } catch (e: Exception) {
+          null
+        }
+        if (stream == null) {
+          VideoInfoCache.remove(id)
+          stream = VideoInfo.pickStream(videoInfo(id), kind)
+        }
+        val found = stream
+          ?: throw YtDlpException(if (kind == "video") "No video stream found for this song" else "No audio stream found")
+        if (kind == "video" && maxHeight > 0 && found["hls"] == true) {
+          @Suppress("UNCHECKED_CAST")
+          val headers = found["headers"] as Map<String, String>
+          val limited = limitedPlaylist(id, found["url"] as String, headers, maxHeight)
+          if (limited != null) return@withContext found + mapOf("url" to limited.second, "height" to limited.first)
+        }
+        found
       }
     }
 
     // Downloads audio (original stream) or video (<= height, merged to mp4), embeds tags,
     // then publishes it to Music/ or Movies/. Emits onProgress { id: key, progress, eta }.
-    AsyncFunction("download") Coroutine { key: String, id: String, kind: String, height: Int, baseName: String ->
+    // `bulk` (many queued, e.g. a playlist import) spaces requests out to avoid YouTube's bot check.
+    AsyncFunction("download") Coroutine { key: String, id: String, kind: String, height: Int, baseName: String, bulk: Boolean ->
       withContext(Dispatchers.IO) {
         ensureInit()
         val isVideo = kind == "video"
@@ -310,32 +404,63 @@ class YtDlpModule : Module() {
           mkdirs()
         }
         val thumbs = File(context.filesDir, "thumbs").apply { mkdirs() }
-        val request = YoutubeDLRequest("https://www.youtube.com/watch?v=$id").apply {
-          addOption("-f", formatSelector(kind, height))
-          if (isVideo) addOption("--merge-output-format", "mp4")
-          addOption("--no-playlist")
-          // Fewer, slower requests make YouTube's "confirm you're not a bot" check less likely.
-          addOption("--sleep-requests", "1")
-          addOption("--no-mtime")
-          addOption("--no-part")
-          addOption("--embed-metadata")
-          addOption("--write-thumbnail")
-          addOption("--convert-thumbnails", "jpg")
-          addOption("-o", "${work.absolutePath}/%(id)s.%(ext)s")
-          addOption("-o", "thumbnail:${thumbs.absolutePath}/%(id)s.%(ext)s")
+        // Just played or checked sizes: start from that lookup instead of asking YouTube again.
+        // Private storage, since a signed-in lookup is account data.
+        val infoFile = VideoInfoCache.get(id)?.let { json ->
+          File(context.noBackupFilesDir, "info/${safeName(key)}.json").apply {
+            parentFile?.mkdirs()
+            writeText(json)
+          }
         }
-        val cookies = addAccount(request, key)
-        var ok = false
+
+        fun attempt(useInfo: Boolean) {
+          val request = YoutubeDLRequest(watchUrl(id)).apply {
+            if (useInfo) addOption("--load-info-json", infoFile!!.absolutePath)
+            addOption("-f", formatSelector(kind, height))
+            if (isVideo) addOption("--merge-output-format", "mp4")
+            addOption("--no-playlist")
+            if (bulk) addOption("--sleep-requests", "1")
+            addOption("--no-mtime")
+            addOption("--no-part")
+            addOption("--embed-metadata")
+            addOption("--write-thumbnail")
+            addOption("--convert-thumbnails", "jpg")
+            addOption("-o", "${work.absolutePath}/%(id)s.%(ext)s")
+            addOption("-o", "thumbnail:${thumbs.absolutePath}/%(id)s.%(ext)s")
+          }
+          useCache(request)
+          val cookies = addAccount(request, key)
+          var ok = false
+          try {
+            YoutubeDL.getInstance().execute(request, processId = key, callback = { progress, eta, _ ->
+              sendEvent("onProgress", mapOf("id" to key, "progress" to progress.toDouble(), "eta" to eta))
+              DownloadNotifier.progress(context, key, progress)
+            })
+            ok = true
+          } finally {
+            cookies?.let { YouTubeAccount.finishRun(context, it, ok) }
+          }
+        }
+
         DownloadNotifier.started(context, key, baseName)
         try {
-          YoutubeDL.getInstance().execute(request, processId = key, callback = { progress, eta, _ ->
-            sendEvent("onProgress", mapOf("id" to key, "progress" to progress.toDouble(), "eta" to eta))
-            DownloadNotifier.progress(context, key, progress)
-          })
+          if (infoFile == null) {
+            attempt(useInfo = false)
+          } else {
+            try {
+              attempt(useInfo = true)
+            } catch (e: YoutubeDL.CanceledException) {
+              throw e
+            } catch (e: Exception) {
+              // The saved links may have expired; look it up again.
+              VideoInfoCache.remove(id)
+              work.listFiles()?.forEach { it.delete() }
+              attempt(useInfo = false)
+            }
+          }
           val media = work.listFiles { f -> f.name.startsWith("$id.") }.orEmpty().maxByOrNull { it.length() }
             ?: throw YtDlpException("Download finished but no media file was found")
           val thumb = File(thumbs, "$id.jpg")
-          ok = true
           mapOf(
             "size" to media.length().toDouble(),
             "uri" to publish(media, isVideo, baseName),
@@ -348,11 +473,43 @@ class YtDlpModule : Module() {
         } catch (e: Exception) {
           throw YtDlpException(cleanError(e, "Download failed"), e)
         } finally {
-          cookies?.let { YouTubeAccount.finishRun(context, it, ok) }
+          infoFile?.delete()
           work.deleteRecursively()
           DownloadNotifier.finished(context, key)
         }
       }
+    }
+
+    // Times the parts of a stream lookup (Settings → Speed test): starting the engine alone, the
+    // quick lookup songs use first, and a lookup with every client (the fallback).
+    AsyncFunction("speedTest") Coroutine { id: String ->
+      withContext(Dispatchers.IO) {
+        ensureInit()
+        fun timed(block: () -> Unit): Double {
+          val start = System.nanoTime()
+          block()
+          return (System.nanoTime() - start) / 1_000_000.0
+        }
+        val startup = timed {
+          run(YoutubeDLRequest(emptyList<String>()).apply { addOption("--version") })
+        }
+        VideoInfoCache.remove(id)
+        val quick = timed { videoInfo(id, fast = true) }
+        VideoInfoCache.remove(id)
+        val full = timed { videoInfo(id) }
+        VideoInfoCache.remove(id)
+        mapOf(
+          "startupMs" to startup,
+          "quickMs" to quick,
+          "fullMs" to full,
+          "signedIn" to YouTubeAccount.isSignedIn(context),
+        )
+      }
+    }
+
+    // Drops a saved lookup, e.g. when its stream link stopped working, so the next try asks YouTube.
+    Function("forgetInfo") { id: String ->
+      VideoInfoCache.remove(id)
     }
 
     Function("cancel") { key: String ->

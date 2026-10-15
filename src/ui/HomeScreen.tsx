@@ -5,7 +5,7 @@ import { SearchResult } from '../../modules/yt-dlp';
 import { homeStore, OnlineRow, refreshHome } from '../home';
 import { interestsStore } from '../interests';
 import { libraryStore, Track } from '../library';
-import { playerStore, playList } from '../player';
+import { playerStore, playList, playResults } from '../player';
 import { playlistsStore, playlistTracks } from '../playlists';
 import { useStore, useStoreValue } from '../store';
 import { DownloadSheet } from './DownloadSheet';
@@ -61,11 +61,9 @@ export function HomeScreen() {
     playList(audio, audio.indexOf(track));
   }
 
-  // Tapping something already saved plays it; otherwise offer the download options.
-  function openOnline(item: SearchResult) {
-    const saved = library.find((t) => t.videoId === item.id && t.kind === 'audio');
-    if (saved) playList([saved], 0);
-    else setSelected(item);
+  // Plays the row from that song on (streamed unless downloaded); long-press for options.
+  function openOnline(row: OnlineRow, item: SearchResult) {
+    playResults(row.items, row.items.indexOf(item), row.title);
   }
 
   const onlineRows = rows.filter((r) => r.items.length || r.status === 'loading');
@@ -96,7 +94,7 @@ export function HomeScreen() {
 
         {onlineRows.map((row) => (
           <Section key={row.key} title={row.title} loading={row.status === 'loading' && row.items.length > 0}>
-            <OnlineRowView row={row} library={library} onOpen={openOnline} onDownload={setSelected} />
+            <OnlineRowView row={row} library={library} onOpen={(item) => openOnline(row, item)} onDownload={setSelected} />
           </Section>
         ))}
 

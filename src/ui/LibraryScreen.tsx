@@ -354,7 +354,7 @@ function DownloadsList({ onGoSearch }: { onGoSearch: () => void }) {
           {d.status === 'downloading' ? (
             <>
               <ProgressBar value={d.progress} />
-              <Text style={type.bodySm}>{Math.round(d.progress)}%</Text>
+              <Text style={type.bodySm}>{d.progress > 0 ? `${Math.round(d.progress)}%` : 'Starting…'}</Text>
             </>
           ) : (
             <Text style={[type.bodySm, d.error && { color: colors.accent }]} numberOfLines={2}>

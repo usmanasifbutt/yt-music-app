@@ -23,6 +23,8 @@ import { colors, LIST_BOTTOM, radius, space, type } from './theme';
 import { confirmDeleteTracks } from './TrackMenu';
 
 const RELEASES_URL = 'https://github.com/usmanasifbutt/yt-music-app/releases';
+/** A short, always-available video for the speed test. */
+const SPEED_TEST_VIDEO = 'jNQXAC9IVRw';
 
 export function SettingsScreen({ engine }: { engine: EngineState }) {
   const settings = useStore(settingsStore);
@@ -32,6 +34,7 @@ export function SettingsScreen({ engine }: { engine: EngineState }) {
   const interests = useStore(interestsStore);
   const [version, setVersion] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [sheet, setSheet] = useState<'speed' | 'notice' | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
@@ -53,6 +56,30 @@ export function SettingsScreen({ engine }: { engine: EngineState }) {
       Alert.alert('Update failed', nativeErrorMessage(e));
     } finally {
       setUpdating(false);
+    }
+  }
+
+  // Shows where a stream's waiting time goes: starting the engine vs. asking YouTube.
+  async function speedTest() {
+    setTesting(true);
+    try {
+      const r = await YtDlp.speedTest(SPEED_TEST_VIDEO);
+      const s = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
+      Alert.alert(
+        'Speed test',
+        [
+          `Engine start: ${s(r.startupMs)}`,
+          `Quick lookup (used first): ${s(r.quickMs)}`,
+          `Full lookup (fallback): ${s(r.fullMs)}`,
+          `Signed in: ${r.signedIn ? 'yes' : 'no'}`,
+          '',
+          'Each lookup includes an engine start. Send these numbers to compare.',
+        ].join('\n')
+      );
+    } catch (e) {
+      Alert.alert('Speed test failed', nativeErrorMessage(e));
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -102,6 +129,11 @@ export function SettingsScreen({ engine }: { engine: EngineState }) {
             title="Update now"
             subtitle="Fixes downloads when YouTube changes something"
             right={<Button label={updating ? 'Updating' : 'Update'} icon="sync" variant="secondary" loading={updating} onPress={updateEngine} />}
+          />
+          <SettingRow
+            title="Speed test"
+            subtitle="Times how long playing a song takes to start"
+            right={<Button label={testing ? 'Testing' : 'Run'} icon="speed" variant="secondary" loading={testing} onPress={speedTest} />}
           />
           <SettingRow
             title="Auto-update daily"
@@ -160,6 +192,11 @@ export function SettingsScreen({ engine }: { engine: EngineState }) {
 
         <Group icon="graphic-eq" title="Playback">
           <SettingRow title="Playback speed" subtitle="Pitch stays natural" onPress={() => setSheet('speed')} right={<Badge label={`${rate}×`} />} />
+          <SettingRow
+            title="Autoplay"
+            subtitle="When the queue ends, keep playing related songs"
+            right={<Toggle value={settings.autoplay} onChange={(v) => updateSettings({ autoplay: v })} />}
+          />
           <SettingRow
             title="Music interests"
             subtitle={interestNames.length ? interestNames.join(', ') : 'Not set'}

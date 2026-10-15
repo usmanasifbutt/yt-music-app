@@ -13,6 +13,10 @@ export type AppSettings = {
   maxParallel: number;
   /** First-launch personal-use notice accepted. */
   consentAccepted: boolean;
+  /** When the queue runs out, keep playing YouTube's related songs. */
+  autoplay: boolean;
+  /** Streamed video quality (max height); 0 = adapt to the connection. */
+  videoQuality: number;
 };
 
 const DEFAULTS: AppSettings = {
@@ -20,6 +24,8 @@ const DEFAULTS: AppSettings = {
   defaultFormat: 'audio',
   maxParallel: 2,
   consentAccepted: false,
+  autoplay: true,
+  videoQuality: 0,
 };
 
 export const settingsStore = createStore<AppSettings>(DEFAULTS);

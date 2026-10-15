@@ -4,6 +4,19 @@ export type ProgressEvent = { id: string; progress: number; eta: number };
 export type DownloadResult = { uri: string; thumbnailPath: string | null; size: number };
 export type MediaKind = 'audio' | 'video';
 
+/** A link for playing without downloading. Valid for a few hours. */
+export type StreamInfo = {
+  url: string;
+  /** Request headers the link needs (e.g. User-Agent). Never cookies. */
+  headers: Record<string, string>;
+  /** HLS playlist rather than a plain file. */
+  hls: boolean;
+  height: number;
+  duration: number | null;
+  /** Video: picture qualities offered (e.g. [144, 360, 720, 1080]); empty for audio. */
+  qualities: number[];
+};
+
 export type SearchResult = {
   id: string;
   title: string;
@@ -29,7 +42,14 @@ declare class YtDlpNative extends NativeModule<Events> {
   update(): Promise<string>;
   search(query: string, limit: number): Promise<string>;
   formats(id: string): Promise<string>;
-  download(key: string, id: string, kind: MediaKind, height: number, baseName: string): Promise<DownloadResult>;
+  /** `bulk`: many downloads queued; spaces out requests to avoid YouTube's bot check. */
+  download(key: string, id: string, kind: MediaKind, height: number, baseName: string, bulk: boolean): Promise<DownloadResult>;
+  /** `maxHeight` > 0 limits a video stream's quality; 0 lets the player adapt. */
+  stream(id: string, kind: MediaKind, maxHeight: number): Promise<StreamInfo>;
+  /** Times engine start-up, the quick stream lookup and the full one (Settings → Speed test). */
+  speedTest(id: string): Promise<{ startupMs: number; quickMs: number; fullMs: number; signedIn: boolean }>;
+  /** Forgets a saved lookup (e.g. its stream link stopped working). */
+  forgetInfo(id: string): void;
   cancel(key: string): boolean;
   deleteMedia(uri: string): Promise<boolean>;
   exists(uri: string): Promise<boolean>;

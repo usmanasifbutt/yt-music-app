@@ -12,12 +12,13 @@ import {
   ToastAndroid,
   View,
 } from 'react-native';
-import { downloadKey, search, SearchResponse, SearchResult } from '../../modules/yt-dlp';
-import { downloadsStore, enqueueDownload, nativeErrorMessage, retryDownload } from '../downloads';
+import YtDlp, { downloadKey, search, SearchResponse, SearchResult } from '../../modules/yt-dlp';
+import { enqueueDownload, nativeErrorMessage } from '../downloads';
 import { getSetting, libraryStore, setSetting } from '../library';
+import { playerStore, playResults } from '../player';
 import { playlistNamed } from '../playlists';
-import { settingsStore } from '../settings';
-import { useStore, useStoreValue } from '../store';
+import { useStoreValue } from '../store';
+import { DownloadButton } from './DownloadButton';
 import { DownloadSheet } from './DownloadSheet';
 import { createOrMerge } from './playlistNames';
 import { Icon } from './Icon';
@@ -39,7 +40,6 @@ export function SearchScreen() {
   const [lastQuery, setLastQuery] = useState('');
   const [limit, setLimit] = useState(PAGE);
   const [loadingMore, setLoadingMore] = useState(false);
-  const { defaultFormat } = useStore(settingsStore);
 
   function saveRecent(next: string[]) {
     setRecent(next);
@@ -56,6 +56,11 @@ export function SearchScreen() {
       const response = await search(q, PAGE);
       setResults(response.results);
       setPlaylist(response.playlist);
+      // Most taps go to the top result: look up its stream now so it starts almost at once.
+      const top = response.results[0];
+      if (top && !libraryStore.get().some((t) => t.key === downloadKey(top.id, 'audio'))) {
+        YtDlp.stream(top.id, 'audio', 0).catch(() => {});
+      }
       setLastQuery(q);
       setLimit(PAGE);
       // Links aren't worth remembering as searches.
@@ -90,15 +95,12 @@ export function SearchScreen() {
     setError(null);
   }
 
-  // The download button follows Settings → Downloads; long-press always shows the menu.
+  // Tapping a result plays it (streamed unless downloaded), with the rest of the results as Up next.
   // Stable reference so result rows (memoised) don't re-render when the screen does.
-  const quickDownload = useCallback((item: SearchResult) => {
-    const what = defaultFormat === 'audio' ? 'Audio' : '720p video';
-    const result =
-      defaultFormat === 'audio' ? enqueueDownload(item, 'audio') : enqueueDownload(item, 'video', 720);
-    const message = { queued: `Downloading ${what.toLowerCase()}`, saved: `${what} already downloaded`, busy: 'Already downloading' };
-    ToastAndroid.show(message[result], ToastAndroid.SHORT);
-  }, [defaultFormat]);
+  const play = useCallback(
+    (index: number) => playResults(results, index, playlist ? `YouTube playlist · ${playlist.title}` : `Search · ${lastQuery}`),
+    [results, playlist, lastQuery]
+  );
 
   function importPlaylist() {
     if (!playlist || !results.length) return;
@@ -209,7 +211,7 @@ export function SearchScreen() {
               />
             ) : null
           }
-          renderItem={({ item }) => <SearchRow item={item} onOpen={setSelected} onDownload={quickDownload} />}
+          renderItem={({ item, index }) => <SearchRow item={item} index={index} onPlay={play} onOptions={setSelected} />}
         />
       )}
       <DownloadSheet item={selected} onClose={() => setSelected(null)} />
@@ -218,17 +220,19 @@ export function SearchScreen() {
 }
 
 /**
- * One result. It subscribes to its own download and saved state, so download progress
- * re-renders only the affected row, not the whole list.
+ * One result: tap to play, ⋮ or long-press for options. It subscribes to its own playing and
+ * saved state, so progress updates re-render only the affected row, not the whole list.
  */
 const SearchRow = memo(function SearchRow({
   item,
-  onOpen,
-  onDownload,
+  index,
+  onPlay,
+  onOptions,
 }: {
   item: SearchResult;
-  onOpen: (item: SearchResult) => void;
-  onDownload: (item: SearchResult) => void;
+  index: number;
+  onPlay: (index: number) => void;
+  onOptions: (item: SearchResult) => void;
 }) {
   // Primitive selector results: e.g. "Audio,720p" for the versions already saved.
   const savedLabels = useStoreValue(libraryStore, (tracks) =>
@@ -237,30 +241,19 @@ const SearchRow = memo(function SearchRow({
       .map((t) => (t.kind === 'audio' ? 'Audio' : `${t.height}p`))
       .join(',')
   );
-  const active = useStoreValue(downloadsStore, (all) =>
-    Object.values(all).find((d) => d.item.id === item.id && d.status !== 'error')
-  );
-  const failed = useStoreValue(downloadsStore, (all) =>
-    Object.values(all).find((d) => d.item.id === item.id && d.status === 'error')
-  );
+  const playing = useStoreValue(playerStore, (s) => s.queue[s.index]?.videoId === item.id);
   const saved = savedLabels ? savedLabels.split(',') : [];
 
-  function onPressDownload() {
-    if (!failed || active) return onDownload(item);
-    Alert.alert('Download failed', failed.error, [
-      { text: 'Close', style: 'cancel' },
-      { text: 'Retry', onPress: () => retryDownload(failed.key) },
-    ]);
-  }
-
   return (
-    <Pressable style={styles.row} onPress={() => onOpen(item)}>
+    <Pressable style={styles.row} onPress={() => onPlay(index)} onLongPress={() => onOptions(item)}>
       <View>
         <Image source={{ uri: item.thumbnail }} style={styles.thumb} contentFit="cover" cachePolicy="memory-disk" transition={120} />
         <Text style={styles.duration}>{formatTime(item.duration)}</Text>
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={type.bodyLg} numberOfLines={2}>
+        <Text style={[type.bodyLg, playing && { color: colors.accent }]} numberOfLines={2}>
+          {playing && <Icon name="graphic-eq" size={16} color={colors.accent} />}
+          {playing ? ' ' : ''}
           {item.title}
         </Text>
         <Text style={[type.bodySm, { marginTop: 2 }]} numberOfLines={1}>
@@ -274,27 +267,8 @@ const SearchRow = memo(function SearchRow({
           </View>
         )}
       </View>
-      <Pressable
-        style={[
-          styles.download,
-          saved.length > 0 && { backgroundColor: colors.successSoft },
-          failed && !active && { backgroundColor: colors.accentSoft },
-        ]}
-        hitSlop={6}
-        onPress={onPressDownload}
-        onLongPress={() => onOpen(item)}>
-        {active ? (
-          active.status === 'queued' ? (
-            <ActivityIndicator size="small" color={colors.success} />
-          ) : (
-            <Text style={[type.labelMd, { color: colors.success }]}>{Math.round(active.progress)}%</Text>
-          )
-        ) : failed ? (
-          <Icon name="error-outline" size={22} color={colors.accent} />
-        ) : (
-          <Icon name={saved.length ? 'download-done' : 'file-download'} size={22} color={saved.length ? colors.success : colors.text} />
-        )}
-      </Pressable>
+      <DownloadButton item={item} onLongPress={() => onOptions(item)} />
+      <IconButton name="more-vert" color={colors.faint} onPress={() => onOptions(item)} />
     </Pressable>
   );
 });

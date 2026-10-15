@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, Share, StyleSheet, Text, ToastAndroid, View } from 'react-native';
 import { downloadKey, DownloadOption, downloadOptions, SearchResult, VIDEO_HEIGHTS } from '../../modules/yt-dlp';
 import { downloadsStore, enqueueDownload, nativeErrorMessage } from '../downloads';
 import { libraryStore } from '../library';
+import { addToQueue, playNext, queueTrack } from '../player';
 import { useStore } from '../store';
 import { Icon, IconName } from './Icon';
 import { Badge } from './kit';
@@ -54,12 +55,29 @@ export function DownloadSheet({ item, onClose }: { item: SearchResult | null; on
   if (!item) return null;
 
   return (
-    <Sheet
-      visible
-      eyebrow="Download format"
-      title={item.title}
-      subtitle={note ?? `${item.artist} · ${formatTime(item.duration)}`}
-      onClose={onClose}>
+    <Sheet visible eyebrow="Song options" title={item.title} subtitle={note ?? `${item.artist} · ${formatTime(item.duration)}`} onClose={onClose}>
+      <View style={styles.actions}>
+        <Action
+          icon="queue-play-next"
+          label="Play next"
+          onPress={() => {
+            playNext(queueTrack(item));
+            ToastAndroid.show('Plays next', ToastAndroid.SHORT);
+            onClose();
+          }}
+        />
+        <Action
+          icon="playlist-play"
+          label="Add to queue"
+          onPress={() => {
+            addToQueue(queueTrack(item));
+            ToastAndroid.show('Added to queue', ToastAndroid.SHORT);
+            onClose();
+          }}
+        />
+        <Action icon="share" label="Share link" onPress={() => void Share.share({ message: `https://www.youtube.com/watch?v=${item.id}` })} />
+      </View>
+      <Text style={[type.labelSm, styles.heading]}>DOWNLOAD</Text>
       <View style={styles.list}>
         {options.map((o) => {
           const key = downloadKey(item.id, o.kind, o.height);
@@ -106,7 +124,19 @@ export function DownloadSheet({ item, onClose }: { item: SearchResult | null; on
   );
 }
 
+function Action({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) {
+  return (
+    <Pressable style={({ pressed }) => [styles.action2, pressed && { backgroundColor: colors.border }]} onPress={onPress}>
+      <Icon name={icon} size={22} color={colors.text} />
+      <Text style={type.labelMd}>{label}</Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
+  actions: { flexDirection: 'row', gap: space.sm, paddingHorizontal: space.md, paddingTop: space.sm },
+  action2: { flex: 1, alignItems: 'center', gap: 6, paddingVertical: 12, borderRadius: radius.lg, backgroundColor: colors.surfaceHigh },
+  heading: { color: colors.muted, letterSpacing: 1, paddingHorizontal: space.md + 4, paddingTop: space.md },
   list: { gap: space.sm, paddingHorizontal: space.md, paddingTop: space.sm },
   option: {
     flexDirection: 'row',

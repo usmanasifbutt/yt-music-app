@@ -98,7 +98,7 @@ function pump() {
 
   const [min, max] = bulk ? GAP_MS.bulk : GAP_MS.normal;
   nextStartAt = now + min + Math.random() * (max - min);
-  void run(next);
+  void run(next, bulk);
   pump(); // schedules the next start, if any
 }
 
@@ -125,11 +125,11 @@ function explain(message: string) {
   return `${hint}\n\n${message}`;
 }
 
-async function run({ key, item, kind, height }: DownloadState) {
+async function run({ key, item, kind, height }: DownloadState, bulk: boolean) {
   patch(key, { status: 'downloading', progress: 0, error: undefined });
   try {
     const baseName = `${item.title} - ${item.artist}`;
-    const { uri, thumbnailPath, size } = await YtDlp.download(key, item.id, kind, height, baseName);
+    const { uri, thumbnailPath, size } = await YtDlp.download(key, item.id, kind, height, baseName, bulk);
     pauseLevel = 0;
     addTrack({
       key,
